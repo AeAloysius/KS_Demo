@@ -38,8 +38,9 @@ let isDashing = false;
 
 const PLAYER_RADIUS = 0.5;
 
-// 出生点（以后可以改成 checkpoint）
+// 出生点（可由 checkpoint 覆盖）
 const initialPosition = new THREE.Vector3(0, 0, 0);
+let respawnPosition = initialPosition.clone();
 
 // HP
 export const PLAYER_MAX_HP = 100;
@@ -100,11 +101,16 @@ export function getCurrentWeaponClass() {
 
 // 通过武器类来装备武器（背包点击时会调用）
 export function equipWeaponClass(WeaponClass) {
-  if (!cameraRef || !WeaponClass) return;
+  if (!cameraRef) return;
 
   // 清掉旧武器的 mesh
   if (currentWeapon && currentWeapon.mesh && currentWeapon.mesh.parent) {
     currentWeapon.mesh.parent.remove(currentWeapon.mesh);
+  }
+
+  if (!WeaponClass) {
+    currentWeapon = null;
+    return;
   }
 
   // 新建一把
@@ -122,7 +128,8 @@ export function createPlayer(scene, camera) {
 
   scene.add(player);
 
-  equipWeaponClass(Sword_Box);
+  // 开局不装备任何武器，需自行拾取
+  equipWeaponClass(null);
 }
 
 export function updatePlayer(dt, scene, enemies) {
@@ -235,12 +242,30 @@ export function damagePlayer(amount) {
 // 由游戏管理：复活玩家（回出生点、回血、速度清零）
 export function resetPlayerState() {
   if (!player) return;
-  player.position.copy(initialPosition);
-  player.position.y = 0;
+  player.position.copy(respawnPosition);
+  player.position.y = respawnPosition.y;
   verticalVelocity = 0;
   onGround = true;
   playerHp = PLAYER_MAX_HP;
   console.log("Player Respawned");
+  stamina = PLAYER_MAX_STAMINA;
+  staminaRegenTimer = 0;
+}
+
+export function setCheckpointPosition(pos) {
+  if (!pos) return;
+  respawnPosition.copy(pos);
+  respawnPosition.y = pos.y;
+}
+
+export function restorePlayerStatus(pos) {
+  if (!player) return;
+  if (pos) {
+    player.position.copy(pos);
+  }
+  verticalVelocity = 0;
+  onGround = true;
+  playerHp = PLAYER_MAX_HP;
   stamina = PLAYER_MAX_STAMINA;
   staminaRegenTimer = 0;
 }
@@ -273,8 +298,10 @@ export function handleKeyDown(event) {
       break;
     case "Space":
       if (onGround) {
-        onGround = false;
-        verticalVelocity = jumpSpeed;
+        if (tryConsumeStamina(STAMINA_COST_JUMP)) {
+          onGround = false;
+          verticalVelocity = jumpSpeed;
+        }
       }
       break;
   }

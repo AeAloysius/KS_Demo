@@ -4,34 +4,87 @@
 //   1) "main"   背包主页，只显示分类 + 当前装备信息
 //   2) "weapon" 武器页面：左侧武器列表 + 中间描述 + 右侧属性
 
+import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
 import { Sword_Box } from "../weapons/sword_box.js";
+import {
+  getMaterialCount,
+  getMaterialName,
+  getMaterialPreviewMesh,
+  getMaterialDescription,
+} from "./MaterialBase.js";
 
-// 以后增加武器就在这里加即可
-const WEAPON_CLASSES = [Sword_Box];
+// 已解锁的武器列表（初始为空，需拾取解锁）
+const WEAPON_CLASSES = [];
 
 // 状态
 let isOpen = false;
 let dom = {};
 let selectedIndex = 0;            // 当前在武器列表里选中的索引
-let currentCategory = "weapon";   // 左侧当前选中的分类
-let mode = "main";                // "main" | "weapon"
+let selectedMaterialIndex = -1;   // 材料页选中的索引
+const secondarySelected = {       // 其他二级分类选中索引
+  material: -1,
+  rune: -1,
+  consumable: -1,
+  ring: -1,
+  key: -1,
+};
+let currentCategory = null;        // 左侧当前选中的分类，初始不选
+let mode = "main";                // "main" | "weapon" | "material" | "rune" ...
+
+// 预览渲染相关
+let previewRenderer = null;
+let previewScene = null;
+let previewCamera = null;
+let previewMesh = null;
 
 // 注入自 main.js / player.js 的回调
 let getEquippedWeaponClass = null;
 let equipWeaponClassFn = null;
+let onEquipCallback = null;
+
+// 对外：解锁新武器（拾取时调用）
+export function unlockWeaponClass(WeaponClass) {
+  if (!WeaponClass) return;
+  if (!WEAPON_CLASSES.includes(WeaponClass)) {
+    WEAPON_CLASSES.push(WeaponClass);
+  }
+  // 若当前选中被删除，重新选第 0 个
+  if (selectedIndex >= WEAPON_CLASSES.length) {
+    selectedIndex = WEAPON_CLASSES.length - 1;
+  }
+  refreshWeaponList();
+  refreshSelection();
+}
+
+// 获取当前已解锁的武器类列表
+export function getUnlockedWeaponClasses() {
+  return [...WEAPON_CLASSES];
+}
+
+// 重置武器解锁为默认状态（保留基础武器）
+export function resetUnlockedWeapons() {
+  WEAPON_CLASSES.splice(0, WEAPON_CLASSES.length);
+  selectedIndex = 0;
+  refreshWeaponList();
+  refreshSelection();
+}
 
 // =============== 对外接口 ===============
 
 export function initInventoryUI(options) {
   getEquippedWeaponClass = options.getEquippedWeaponClass;
   equipWeaponClassFn     = options.equipWeaponClass;
+  onEquipCallback       = options.onEquip || null;
 
   dom.root       = document.getElementById("inventory-screen");
   dom.weaponList = document.getElementById("inv-weapon-list");
   dom.desc       = document.getElementById("inv-desc");
   dom.stats      = document.getElementById("inv-stats");
+  dom.statsTitle = document.getElementById("inv-stats-title");
   dom.mainHand   = document.getElementById("inv-main-hand");
+  dom.slotLabel  = document.getElementById("inv-slot-label");
   dom.equipBtn   = document.getElementById("inv-equip-main");
+  dom.categoryList = document.getElementById("inv-category-list");
   dom.categoryButtons = document.querySelectorAll("#inv-category-list button");
   dom.preview    = document.getElementById("inv-preview");
   dom.backBtn    = document.getElementById("inv-back-btn");
@@ -50,6 +103,9 @@ export function initInventoryUI(options) {
         equipWeaponClassFn(WeaponClass);
         refreshEquippedSlot();
         refreshWeaponList(); // 更新“装备中”标记
+        if (typeof onEquipCallback === "function") {
+          onEquipCallback(WeaponClass);
+        }
       }
     });
   }
@@ -69,26 +125,28 @@ export function initInventoryUI(options) {
         currentCategory = cat;
 
         if (cat === "weapon") {
-          // 进入武器页面
           enterWeaponPage();
+        } else if (cat === "material") {
+          enterMaterialPage();
         } else {
-          // 其他分类暂时只在主页里显示占位文字
-          enterMainPage(cat);
+          enterSecondaryPage(cat);
         }
       });
     });
   }
 
   // 初始状态：打开背包时先进入主页，默认选中“武器”分类
-  currentCategory = "weapon";
+  currentCategory = null;
   mode = "main";
   updateCategoryButtons();
   renderMainPage();
   refreshEquippedSlot();
+
+  initPreviewRenderer();
 }
 
-// Tab / Esc 调用它来开关背包
-export function toggleInventory() {
+// Tab / Esc 调用它来开关背包，可选关闭时是否重新申请指针锁定
+export function toggleInventory({ lockOnClose = true } = {}) {
   if (!dom.root) return;
 
   isOpen = !isOpen;
@@ -99,14 +157,20 @@ export function toggleInventory() {
     if (document.pointerLockElement === document.body) {
       document.exitPointerLock();
     }
-    // 每次打开时都回到主页
-    currentCategory = "weapon";
+    // 每次打开时都回到主页（未选中状态）
+    currentCategory = null;
+    selectedMaterialIndex = -1;
+    Object.keys(secondarySelected).forEach((k) => { secondarySelected[k] = -1; });
     mode = "main";
     updateCategoryButtons();
     renderMainPage();
     refreshEquippedSlot();
   } else {
     dom.root.classList.remove("show");
+    if (lockOnClose && document.pointerLockElement !== document.body) {
+      document.body.requestPointerLock();
+    }
+    renderPreview();
   }
 }
 
@@ -114,12 +178,40 @@ export function isInventoryOpen() {
   return isOpen;
 }
 
+// Esc/back：若在二级页面则返回主页，若本就主页则不处理
+export function backToInventoryHub() {
+  if (!isOpen) return false;
+  if (mode !== "main") {
+    enterMainPage();
+    return true;
+  }
+  return false;
+}
+
 // =============== 内部：模式切换 ===============
 
-function enterMainPage(category) {
-  if (category) currentCategory = category;
+function renderMainPage() {
   mode = "main";
+  currentCategory = null;
+  if (dom.root) dom.root.classList.add("hub-mode");
+  if (dom.categoryList) dom.categoryList.style.display = "block";
+  if (dom.backBtn) dom.backBtn.style.display = "none";
+
+  if (dom.weaponList) {
+    dom.weaponList.style.display = "none";
+    dom.weaponList.innerHTML = "";
+  }
+  if (dom.equipBtn) dom.equipBtn.style.display = "none";
+  if (dom.stats) dom.stats.style.display = "none";
+  if (dom.statsTitle) dom.statsTitle.style.display = "none";
+  if (dom.preview) dom.preview.textContent = "";
+  if (dom.desc) dom.desc.textContent = "";
+  if (dom.slotLabel) dom.slotLabel.style.display = "none";
+  if (dom.mainHand) dom.mainHand.textContent = "";
   updateCategoryButtons();
+}
+
+function enterMainPage() {
   renderMainPage();
   refreshEquippedSlot();
 }
@@ -127,47 +219,76 @@ function enterMainPage(category) {
 function enterWeaponPage() {
   mode = "weapon";
   currentCategory = "weapon";
+  if (dom.root) dom.root.classList.remove("hub-mode");
+  if (dom.categoryList) dom.categoryList.style.display = "none";
   updateCategoryButtons();
   renderWeaponPage();
   refreshEquippedSlot();
 }
 
-// =============== 渲染：主页 & 武器页 ===============
+function enterMaterialPage() {
+  enterSecondaryPage("material");
+}
 
-function renderMainPage() {
-  // 主页：不显示左侧武器列表、不显示描述和武器属性，只显示装备信息和占位说明
+function enterSecondaryPage(cat) {
+  mode = cat;
+  currentCategory = cat;
+  if (dom.root) dom.root.classList.remove("hub-mode");
+  if (dom.categoryList) dom.categoryList.style.display = "none";
+  updateCategoryButtons();
+  renderSecondaryPage(cat);
+}
 
-  if (dom.backBtn) {
-    dom.backBtn.style.display = "none"; // 在主页不需要返回按钮
-  }
+function renderSecondaryPage(cat) {
+  if (dom.root) dom.root.classList.remove("hub-mode");
+  if (dom.categoryList) dom.categoryList.style.display = "none";
+  if (dom.backBtn) dom.backBtn.style.display = "inline-block";
 
   if (dom.weaponList) {
-    dom.weaponList.style.display = "none";
+    dom.weaponList.style.display = "block";
     dom.weaponList.innerHTML = "";
   }
+  if (dom.equipBtn) dom.equipBtn.style.display = "none";
+  if (dom.stats) dom.stats.style.display = "none";
+  if (dom.statsTitle) dom.statsTitle.style.display = "none";
+  if (dom.slotLabel) dom.slotLabel.style.display = "none";
+  if (dom.mainHand) dom.mainHand.textContent = "";
 
-  if (dom.desc) {
-    dom.desc.textContent = "";
+  refreshSecondaryList(cat);
+  if (getSelectedIndex(cat) < 0) {
+    const first = getCategoryEntries(cat).findIndex((e) => e.count > 0);
+    setSelectedIndex(cat, first);
   }
-
-  if (dom.stats) {
-    // 简单占位：以后你可以在这里填玩家属性信息
-    const label = getCategoryLabel(currentCategory);
-    dom.stats.innerHTML = `<div>${label} 页面暂未实现（主页占位）</div>`;
-  }
-
-  if (dom.preview) {
-    dom.preview.textContent = "背包 - 主菜单（暂时占位）";
-  }
+  refreshSecondarySelection(cat);
 }
 
 function renderWeaponPage() {
+  if (dom.root) dom.root.classList.remove("hub-mode");
+  if (dom.categoryList) dom.categoryList.style.display = "none";
   if (dom.backBtn) {
     dom.backBtn.style.display = "inline-block";
   }
 
   if (dom.weaponList) {
     dom.weaponList.style.display = "block";
+  }
+
+  if (dom.equipBtn) {
+    dom.equipBtn.style.display = "inline-block";
+  }
+
+  if (dom.stats) {
+    dom.stats.style.display = "block";
+  }
+
+  if (dom.statsTitle) {
+    dom.statsTitle.style.display = "block";
+    dom.statsTitle.textContent = "武器参数";
+  }
+
+  if (dom.slotLabel) {
+    dom.slotLabel.textContent = "主手武器：";
+    dom.slotLabel.style.display = "block";
   }
 
   // 进入武器页面时，刷新武器列表和当前选中
@@ -180,7 +301,7 @@ function renderWeaponPage() {
 function updateCategoryButtons() {
   if (!dom.categoryButtons) return;
   dom.categoryButtons.forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.cat === currentCategory);
+    btn.classList.toggle("active", currentCategory && btn.dataset.cat === currentCategory);
   });
 }
 
@@ -196,6 +317,38 @@ function getCategoryLabel(cat) {
   }
 }
 
+function getSelectedIndex(cat) {
+  if (cat === "material") return selectedMaterialIndex;
+  return secondarySelected[cat] ?? -1;
+}
+
+function setSelectedIndex(cat, idx) {
+  if (cat === "material") {
+    selectedMaterialIndex = idx;
+  } else if (cat in secondarySelected) {
+    secondarySelected[cat] = idx;
+  }
+}
+
+function getPlaceholderEntries(cat) {
+  const label = getCategoryLabel(cat);
+  return [{ name: `${label}`, desc: `收集到${label}后会显示在这里。`, count: 0 }];
+}
+
+function getCategoryEntries(cat) {
+  switch (cat) {
+    case "material":
+      return getMaterialEntries();
+    case "rune":
+    case "consumable":
+    case "ring":
+    case "key":
+      return getPlaceholderEntries(cat);
+    default:
+      return getPlaceholderEntries(cat);
+  }
+}
+
 // =============== 武器列表相关 ===============
 
 function refreshWeaponList() {
@@ -208,7 +361,14 @@ function refreshWeaponList() {
     div.className = "inv-empty";
     div.textContent = "没有武器";
     dom.weaponList.appendChild(div);
+    if (dom.equipBtn) dom.equipBtn.disabled = true;
     return;
+  }
+
+  if (dom.equipBtn) dom.equipBtn.disabled = false;
+
+  if (selectedIndex >= WEAPON_CLASSES.length) {
+    selectedIndex = WEAPON_CLASSES.length - 1;
   }
 
   const equippedClass = getEquippedWeaponClass
@@ -237,8 +397,90 @@ function refreshWeaponList() {
   });
 }
 
+// 材料列表（目前只有默认材料）
+function getMaterialEntries() {
+  const name = typeof getMaterialName === "function" ? getMaterialName() : "材料";
+  const desc = typeof getMaterialDescription === "function" ? getMaterialDescription() : "";
+  const count = typeof getMaterialCount === "function" ? getMaterialCount() : 0;
+  return [{ name, desc, count }];
+}
+
+function refreshSecondaryList(cat) {
+  if (!dom.weaponList) return;
+  dom.weaponList.innerHTML = "";
+
+  const entries = getCategoryEntries(cat);
+  const hasAny = entries.some((e) => e.count > 0);
+
+  if (!hasAny) {
+    const div = document.createElement("div");
+    div.className = "inv-empty";
+    div.textContent = `没有${getCategoryLabel(cat)}可预览`;
+    dom.weaponList.appendChild(div);
+    setSelectedIndex(cat, -1);
+    return;
+  }
+
+  if (getSelectedIndex(cat) >= entries.length) {
+    setSelectedIndex(cat, entries.length - 1);
+  }
+
+  entries.forEach((entry, index) => {
+    const row = document.createElement("button");
+    row.className = "inv-weapon-row";
+    row.dataset.index = index;
+    row.textContent = `${entry.name}  x ${entry.count}`;
+    if (index === getSelectedIndex(cat)) row.classList.add("selected");
+    row.addEventListener("click", () => {
+      setSelectedIndex(cat, index);
+      refreshSecondarySelection(cat);
+      const rows = dom.weaponList.querySelectorAll(".inv-weapon-row");
+      rows.forEach((r, i) => r.classList.toggle("selected", i === getSelectedIndex(cat)));
+    });
+    dom.weaponList.appendChild(row);
+  });
+}
+
+function refreshSecondarySelection(cat) {
+  const entries = getCategoryEntries(cat);
+  const entry = entries[getSelectedIndex(cat)];
+  const label = getCategoryLabel(cat);
+
+  if (!entry || entry.count <= 0) {
+    if (dom.preview) dom.preview.textContent = `尚无${label}`;
+    if (dom.desc) dom.desc.textContent = "";
+    return;
+  }
+
+  if (dom.desc) {
+    dom.desc.textContent = entry.desc || "";
+  }
+
+  if (dom.preview) {
+    if (cat === "material") {
+      renderMaterialPreview(entry.name);
+    } else {
+      dom.preview.textContent = `${label}：${entry.name}`;
+    }
+  }
+}
+
+// 包装函数：材料仍沿用旧命名，内部转到新逻辑
+function refreshMaterialList() {
+  refreshSecondaryList("material");
+}
+
+function refreshMaterialSelection() {
+  refreshSecondarySelection("material");
+}
+
 function refreshSelection() {
-  if (!WEAPON_CLASSES.length || mode !== "weapon") return;
+  if (!WEAPON_CLASSES.length || mode !== "weapon") {
+    if (dom.preview) dom.preview.textContent = "没有武器可预览";
+    if (dom.desc) dom.desc.textContent = "拾取一把武器后可在此查看";
+    if (dom.stats) dom.stats.innerHTML = "";
+    return;
+  }
 
   const WeaponClass = WEAPON_CLASSES[selectedIndex];
   const name = WeaponClass.displayName || WeaponClass.name || "武器";
@@ -256,9 +498,7 @@ function refreshSelection() {
     });
   }
 
-  if (dom.preview) {
-    dom.preview.textContent = `${name} 的模型预览（暂时占位）`;
-  }
+  renderWeaponPreview(WeaponClass, name);
 
   if (dom.desc) {
     dom.desc.textContent = desc;
@@ -291,4 +531,168 @@ function refreshEquippedSlot() {
 
   const name = equippedClass.displayName || equippedClass.name || "武器";
   dom.mainHand.textContent = name;
+}
+
+// =============== 3D 预览 ===============
+
+function initPreviewRenderer() {
+  if (!dom.preview) return;
+
+  // 已经有 renderer，但可能被 DOM 清掉了，再次挂载即可
+  if (previewRenderer) {
+    if (previewRenderer.domElement.parentElement !== dom.preview) {
+      dom.preview.innerHTML = "";
+      dom.preview.appendChild(previewRenderer.domElement);
+    }
+    resizePreviewRenderer();
+    return;
+  }
+  const { clientWidth: w, clientHeight: h } = dom.preview;
+
+  previewRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  previewRenderer.setPixelRatio(window.devicePixelRatio || 1);
+  previewRenderer.setSize(w, h);
+  previewRenderer.setClearColor(0x000000, 0);
+
+  previewScene = new THREE.Scene();
+  previewCamera = new THREE.PerspectiveCamera(35, w / h, 0.01, 20);
+  previewCamera.position.set(0, 0, 3);
+
+  const amb = new THREE.AmbientLight(0xffffff, 0.8);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(3, 4, 5);
+  previewScene.add(amb);
+  previewScene.add(dir);
+
+  dom.preview.innerHTML = "";
+  previewRenderer.domElement.style.width = "100%";
+  previewRenderer.domElement.style.height = "100%";
+  previewRenderer.domElement.style.objectFit = "contain";
+  dom.preview.appendChild(previewRenderer.domElement);
+
+  window.addEventListener("resize", resizePreviewRenderer);
+}
+
+function resizePreviewRenderer() {
+  if (!previewRenderer || !previewCamera || !dom.preview) return;
+  const w = dom.preview.clientWidth || 1;
+  const h = dom.preview.clientHeight || 1;
+  previewCamera.aspect = w / h;
+  previewCamera.updateProjectionMatrix();
+  previewRenderer.setSize(w, h);
+  renderPreview();
+}
+
+function clearPreviewMesh() {
+  if (previewMesh && previewScene) {
+    previewScene.remove(previewMesh);
+    previewMesh = null;
+  }
+}
+
+function buildWeaponPreviewMesh(WeaponClass) {
+  if (!WeaponClass || !previewCamera) return null;
+  try {
+    const tempWeapon = new WeaponClass(previewCamera);
+    const mesh = tempWeapon.mesh ? tempWeapon.mesh.clone(true) : null;
+    if (tempWeapon.mesh && tempWeapon.mesh.parent) {
+      tempWeapon.mesh.parent.remove(tempWeapon.mesh);
+    }
+    if (!mesh && typeof tempWeapon.createMesh === "function") {
+      return tempWeapon.createMesh();
+    }
+    return mesh;
+  } catch (err) {
+    console.warn("预览模型创建失败", err);
+    return null;
+  }
+}
+
+function buildMaterialPreviewMesh() {
+  if (typeof getMaterialPreviewMesh !== "function") return null;
+  const mesh = getMaterialPreviewMesh();
+  return mesh || null;
+}
+
+function renderWeaponPreview(WeaponClass, nameForFallback) {
+  if (!dom.preview) return;
+  initPreviewRenderer();
+  if (!previewRenderer || !previewScene || !previewCamera) {
+    dom.preview.textContent = `${nameForFallback} 的模型预览不可用`;
+    return;
+  }
+
+  clearPreviewMesh();
+
+  const mesh = buildWeaponPreviewMesh(WeaponClass);
+  if (!mesh) {
+    dom.preview.textContent = `${nameForFallback} 的模型预览不可用`;
+    return;
+  }
+
+  // 居中并统一比例
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  mesh.position.sub(center);
+
+  const radius = Math.max(size.x, size.y, size.z) * 0.5;
+  const fov = THREE.MathUtils.degToRad(previewCamera.fov);
+  const distHeight = (radius / Math.tan(fov / 2)) * 1.1; // 预留边距
+  const distWidth = (radius / (Math.tan(fov / 2) * previewCamera.aspect)) * 1.1;
+  const dist = Math.max(distHeight, distWidth);
+  previewCamera.position.set(0, 0, dist);
+  previewCamera.lookAt(0, 0, 0);
+
+  // 统一向左（页面左侧方向）倾斜 45°
+  mesh.rotation.z = Math.PI / 4;
+
+  previewScene.add(mesh);
+  previewMesh = mesh;
+  renderPreview();
+}
+
+function renderMaterialPreview(nameForFallback) {
+  if (!dom.preview) return;
+  initPreviewRenderer();
+  if (!previewRenderer || !previewScene || !previewCamera) {
+    dom.preview.textContent = `${nameForFallback} 的模型预览不可用`;
+    return;
+  }
+
+  clearPreviewMesh();
+
+  const mesh = buildMaterialPreviewMesh();
+  if (!mesh) {
+    dom.preview.textContent = `${nameForFallback} 的模型预览不可用`;
+    return;
+  }
+
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  mesh.position.sub(center);
+
+  const radius = Math.max(size.x, size.y, size.z) * 0.5 || 0.5;
+  const fov = THREE.MathUtils.degToRad(previewCamera.fov);
+  const distHeight = (radius / Math.tan(fov / 2)) * 1.1;
+  const distWidth = (radius / (Math.tan(fov / 2) * previewCamera.aspect)) * 1.1;
+  const dist = Math.max(distHeight, distWidth, 1.2);
+  previewCamera.position.set(0, 0, dist);
+  previewCamera.lookAt(0, 0, 0);
+
+  mesh.rotation.z = Math.PI / 6;
+
+  previewScene.add(mesh);
+  previewMesh = mesh;
+  renderPreview();
+}
+
+function renderPreview() {
+  if (!previewRenderer || !previewScene || !previewCamera) return;
+  previewRenderer.render(previewScene, previewCamera);
 }

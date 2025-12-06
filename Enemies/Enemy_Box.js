@@ -2,6 +2,7 @@
 import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
 import { EnemyBase } from "./EnemyBase.js";
 import { mapWalls } from "../Map.js";
+import { addPoints } from "../Points.js";
 
 const tmpVec3 = new THREE.Vector3();
 
@@ -14,10 +15,10 @@ export class Enemy_Box extends EnemyBase {
 
     // ========= 追击 / 攻击参数 =========
     this.chaseRange     = 10;
-    this.stopDistance   = 1.8;
-    this.attackRange    = 1.5;
+    this.stopDistance   = 1.5;
+    this.attackRange    = 1.8;
     this.attackDamage   = 5;
-    this.attackInterval = 8.0;
+    this.attackInterval = 1.0;
     this.attackCooldown = 0;
 
     this.radius = 0.4; // 敌人碰撞半径
@@ -39,6 +40,8 @@ export class Enemy_Box extends EnemyBase {
     this.hitColor         = new THREE.Color(0xff6666);        // 受击时颜色
     this.hitFlashDuration = 0.1;                              // 闪一下的时间
     this.hitFlashTimer    = 0;
+
+    this.pointValue = 20;
   }
 
   createMesh() {
@@ -48,6 +51,11 @@ export class Enemy_Box extends EnemyBase {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     return mesh;
+  }
+
+  onDeath() {
+    addPoints(this.pointValue);
+    super.onDeath();
   }
 
   /**

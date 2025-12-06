@@ -176,6 +176,72 @@
       box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
     }
 
+    /* ======== 主菜单 ======== */
+    #main-menu {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.72);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 60;
+      backdrop-filter: blur(2px);
+    }
+
+    #main-menu .menu-box {
+      min-width: 320px;
+      padding: 24px 28px;
+      background: rgba(20, 20, 20, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 10px;
+      box-shadow: 0 8px 26px rgba(0, 0, 0, 0.45);
+      color: #fff;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    #main-menu h1 {
+      font-size: 22px;
+      letter-spacing: 1px;
+      margin: 0;
+    }
+
+    #main-menu p {
+      font-size: 13px;
+      opacity: 0.85;
+      margin: 0;
+    }
+
+    #main-menu .menu-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 6px;
+    }
+
+    #main-menu button {
+      padding: 10px 12px;
+      font-size: 14px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.12s ease, transform 0.08s ease;
+    }
+
+    #main-menu button:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.16);
+      transform: translateY(-1px);
+    }
+
+    #main-menu button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
 
     /* ======== 死亡界面 ======== */
     #death-screen {
@@ -222,6 +288,50 @@
       background: rgba(0, 0, 0, 0.9);
       color: #fff;
       z-index: 40;
+    }
+
+    /* Hub 模式：初始只显示分类按钮并居中（仅在 .show 时生效） */
+    #inventory-screen.show.hub-mode {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+
+    #inventory-screen.hub-mode #inv-left,
+    #inventory-screen.hub-mode #inv-center,
+    #inventory-screen.hub-mode #inv-right {
+      margin: 0;
+      border: none;
+      background: transparent;
+    }
+
+    #inventory-screen.hub-mode #inv-left {
+      width: auto;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 0;
+    }
+
+    #inventory-screen.hub-mode #inv-category-list {
+      border: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 220px;
+    }
+
+    #inventory-screen.hub-mode #inv-category-list button {
+      justify-content: center;
+      text-align: center;
+      font-size: 16px;
+    }
+
+    #inventory-screen.hub-mode #inv-center,
+    #inventory-screen.hub-mode #inv-right,
+    #inventory-screen.hub-mode #inv-weapon-list {
+      display: none !important;
     }
 
     #inventory-screen.show {
@@ -368,6 +478,21 @@
     #inv-main-hand {
       margin-top: 2px;
       font-weight: bold;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .slot-label {
+      opacity: 0.75;
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    .item-name {
+      font-weight: 700;
+      font-size: 14px;
     }
 
     /* 右侧：属性区域 */
@@ -439,6 +564,18 @@
     </div>
   </div>
 
+  <!-- 主菜单 -->
+  <div id="main-menu">
+    <div class="menu-box">
+      <h1>KS Demo</h1>
+      <p>选择开始方式</p>
+      <div class="menu-actions">
+        <button id="btn-new-game">新游戏</button>
+        <button id="btn-continue">继续游戏</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 背包界面（Tab 打开） -->
   <div id="inventory-screen">
     <!-- 左侧：分类 + （在武器页时）武器列表 -->
@@ -463,7 +600,7 @@
       <div id="inv-desc"></div>
       <button id="inv-equip-main">装备到主手</button>
       <div id="inv-equip-slots">
-        <div>主手武器：</div>
+        <div class="slot-label" id="inv-slot-label">主手武器：</div>
         <div id="inv-main-hand">空</div>
       </div>
     </div>
