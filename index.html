@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>KS4 Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    #game {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* 顶部提示文字 */
+    #hint {
+      position: fixed;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font-size: 12px;
+      background: rgba(0, 0, 0, 0.6);
+      padding: 4px 10px;
+      border-radius: 4px;
+      z-index: 20;
+    }
+
+    /* 准星 */
+    #crosshair {
+      position: fixed;
+      left: 50%;
+      top: 50%;
+      width: 8px;
+      height: 8px;
+      margin-left: -4px;
+      margin-top: -4px;
+      background: #fff;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 10;
+      opacity: 0.9;
+    }
+
+    /* 左下 HUD 容器：把体力/HP 堆叠在一起，防止被屏幕裁剪 */
+    #hud-left {
+      position: fixed;
+      left: 20px;
+      bottom: 20px;
+      width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 20;
+      color: #fff;
+      pointer-events: none;
+    }
+
+    /* ======== HP 条 ======== */
+    #hp-container {
+      width: 100%;
+    }
+
+    #hp-label {
+      font-size: 12px;
+      margin-bottom: 4px;
+      text-shadow: 0 0 4px #000;
+    }
+
+    #hp-bg {
+      width: 100%;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.8) inset;
+    }
+
+    #hp-fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(to right, #ff4444, #ffbb55);
+      transition: width 0.1s linear;
+    }
+
+    #hp-text {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 11px;
+      text-shadow: 0 0 4px #000;
+      pointer-events: none;
+    }
+
+    /* ======== 体力条（绿色） ======== */
+    #stamina-container {
+      width: 100%;
+    }
+
+    #stamina-label {
+      font-size: 12px;
+      margin-bottom: 4px;
+      text-shadow: 0 0 4px #000;
+    }
+
+    #stamina-bg {
+      width: 100%;
+      height: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.8) inset;
+    }
+
+    #stamina-fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(to right, #3ad35c, #a4ff73);
+      transition: width 0.1s linear;
+    }
+
+    
+
+        /* ==== 蓄力条 ==== */
+    #charge-container {
+      position: fixed;
+      left: 50%;
+      bottom: 40px;
+      transform: translateX(-50%);
+      width: 260px;
+      height: 14px;
+      z-index: 21;
+    }
+
+    #charge-bg {
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 4px;
+      overflow: hidden;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.8) inset;
+      opacity: 0.25; /* 默认淡一点，蓄力时再调高 */
+      transition: opacity 0.1s linear;
+    }
+
+    #charge-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(to right, #4488ff, #88ddff);
+      transition: width 0.05s linear, background 0.05s linear, box-shadow 0.05s linear;
+    }
+
+    /* 满蓄：变成白色并发光 */
+    #charge-bg.charged #charge-fill {
+      background: #ffffff;
+      box-shadow: 0 0 10px rgba(255, 255, 255, 0.9);
+    }
+
+
+    /* ======== 死亡界面 ======== */
+    #death-screen {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+    }
+
+    #death-screen.show {
+      display: flex;
+    }
+
+    #death-box {
+      padding: 24px 32px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      text-align: center;
+      color: #fff;
+      box-shadow: 0 0 18px rgba(0, 0, 0, 0.9);
+    }
+
+    #death-title {
+      font-size: 32px;
+      margin-bottom: 12px;
+      letter-spacing: 4px;
+      color: #ff4444;
+    }
+
+    #death-tip {
+      font-size: 14px;
+      opacity: 0.85;
+    }
+
+    /* ======== 背包界面整体 ======== */
+    #inventory-screen {
+      position: fixed;
+      inset: 0;
+      display: none;
+      background: rgba(0, 0, 0, 0.9);
+      color: #fff;
+      z-index: 40;
+    }
+
+    #inventory-screen.show {
+      display: flex;
+      flex-direction: row;
+    }
+
+    #inv-left,
+    #inv-center,
+    #inv-right {
+      margin-top: 40px;
+      margin-bottom: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      background: rgba(0, 0, 0, 0.65);
+    }
+
+    /* 左侧：分类列表区域 */
+    #inv-left {
+      width: 240px;
+      margin-left: 32px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #inv-category-list {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    #inv-category-list button {
+      width: 100%;
+      background: none;
+      border: none;
+      color: #fff;
+      text-align: left;
+      padding: 8px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    #inv-category-list button.active,
+    #inv-category-list button:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+
+    #inv-weapon-list {
+      flex: 1;
+      overflow-y: auto;
+      display: none; /* 默认在主页不显示，进入武器页再显示 */
+    }
+
+    .inv-weapon-row {
+      width: 100%;
+      background: none;
+      border: none;
+      color: #fff;
+      text-align: left;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .inv-weapon-row.selected {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    .inv-empty {
+      padding: 8px 12px;
+      font-size: 13px;
+      opacity: 0.7;
+    }
+
+    /* 中间：预览 + 描述 + 装备槽 */
+    #inv-center {
+      flex: 1;
+      margin: 40px 16px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #inv-center-header {
+      display: flex;
+      justify-content: flex-start;
+      margin-bottom: 4px;
+    }
+
+    #inv-back-btn {
+      padding: 2px 8px;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      color: #fff;
+      cursor: pointer;
+      display: none; /* 主页隐藏，武器页显示 */
+    }
+
+    #inv-back-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    #inv-preview {
+      flex: 1;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+      text-align: center;
+    }
+
+    #inv-desc {
+      min-height: 70px;
+      font-size: 13px;
+      line-height: 1.4;
+      border-top: 1px solid rgba(255, 255, 255, 0.25);
+      padding-top: 6px;
+      margin-bottom: 6px;
+    }
+
+    #inv-equip-main {
+      align-self: flex-start;
+      padding: 4px 12px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.6);
+      color: #fff;
+      cursor: pointer;
+      margin-bottom: 6px;
+    }
+
+    #inv-equip-main:hover {
+      background: rgba(255, 255, 255, 0.28);
+    }
+
+    #inv-equip-slots {
+      margin-top: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.25);
+      padding-top: 6px;
+      font-size: 13px;
+    }
+
+    #inv-main-hand {
+      margin-top: 2px;
+      font-weight: bold;
+    }
+
+    /* 右侧：属性区域 */
+    #inv-right {
+      width: 260px;
+      margin-right: 32px;
+      margin-top: 40px;
+      margin-bottom: 40px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #inv-stats-title {
+      font-size: 14px;
+      margin-bottom: 6px;
+    }
+
+    #inv-stats {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    #inventory-hint {
+      position: absolute;
+      right: 24px;
+      bottom: 16px;
+      font-size: 12px;
+      opacity: 0.7;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="hint">点击画面锁定鼠标，WASD 移动，空格跳跃，左键攻击，Tab 打开背包</div>
+  <canvas id="game"></canvas>
+  <div id="crosshair"></div>
+
+  <!-- 左下 HUD：体力 + HP -->
+  <div id="hud-left">
+    <div id="stamina-container">
+      <div id="stamina-label">STAMINA</div>
+      <div id="stamina-bg">
+        <div id="stamina-fill"></div>
+      </div>
+    </div>
+
+    <div id="hp-container">
+      <div id="hp-label">HP</div>
+      <div id="hp-bg">
+        <div id="hp-fill"></div>
+        <div id="hp-text">100 / 100</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 死亡界面 -->
+  <div id="death-screen">
+    <div id="death-box">
+      <div id="death-title">YOU DIED</div>
+      <div id="death-tip">点击任意位置复活</div>
+    </div>
+  </div>
+
+  <!-- 蓄力条 -->
+  <div id="charge-container">
+    <div id="charge-bg">
+      <div id="charge-fill"></div>
+    </div>
+  </div>
+
+  <!-- 背包界面（Tab 打开） -->
+  <div id="inventory-screen">
+    <!-- 左侧：分类 + （在武器页时）武器列表 -->
+    <div id="inv-left">
+      <div id="inv-category-list">
+        <button data-cat="weapon" class="active">武器</button>
+        <button data-cat="rune">符文</button>
+        <button data-cat="consumable">消耗品</button>
+        <button data-cat="ring">戒指</button>
+        <button data-cat="key">关键物品</button>
+        <button data-cat="material">材料</button>
+      </div>
+      <div id="inv-weapon-list"></div>
+    </div>
+
+    <!-- 中间：预览 + 描述 + 装备槽 -->
+    <div id="inv-center">
+      <div id="inv-center-header">
+        <button id="inv-back-btn">返回背包</button>
+      </div>
+      <div id="inv-preview">背包 - 主菜单（暂时占位）</div>
+      <div id="inv-desc"></div>
+      <button id="inv-equip-main">装备到主手</button>
+      <div id="inv-equip-slots">
+        <div>主手武器：</div>
+        <div id="inv-main-hand">空</div>
+      </div>
+    </div>
+
+    <!-- 右侧：属性区域 -->
+    <div id="inv-right">
+      <div id="inv-stats-title">武器参数</div>
+      <div id="inv-stats"></div>
+      <div id="inventory-hint">Tab 或 Esc 关闭背包</div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
