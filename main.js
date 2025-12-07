@@ -149,6 +149,7 @@ let retroEnabled = false;
 let isMainMenuOpen = true;
 let torchLight = null;
 let mazeGlowMaterial = null;
+let mazeGlowCount = 0;
 let lastPlayerPos = new THREE.Vector3();
 let cameraBobPhase = 0;
 let cameraBobOffset = 0;
@@ -176,7 +177,7 @@ function init() {
   posIndicatorEl = document.getElementById("pos-indicator");
   variantToggleEl = document.getElementById("variant-toggle");
 
-    // 新增：蓄力条
+  // 蓄力条
   chargeBgEl   = document.getElementById("charge-bg");
   chargeFillEl = document.getElementById("charge-fill");
 
@@ -248,6 +249,7 @@ function init() {
   initMaterials(scene);
   mazeGlowMaterial = new MazeGlow();
   mazeGlowMaterial.init(scene);
+  mazeGlowCount = 0;
 
     // 地图中的武器拾取
     initWeaponPickups(scene);
@@ -334,6 +336,7 @@ function init() {
     equipWeaponClass,
     onEquip: () => saveGameState(),
     onEquipRing: () => saveGameState(),
+    getExtraMaterials,
   });
 
   // 读取版本模式
@@ -444,6 +447,9 @@ function onKeyDown(event) {
     if (mazeGlowMaterial) {
       const pickedMaze = mazeGlowMaterial.tryPickup(scene, playerPos);
       if (pickedMaze) {
+        mazeGlowCount = typeof mazeGlowMaterial.getCount === "function"
+          ? mazeGlowMaterial.getCount()
+          : mazeGlowCount + 1;
         showPickupToast(`Picked up: ${pickedMaze}`);
         saveGameState();
         return;
@@ -1423,7 +1429,23 @@ function updateTorchLightPosition() {
 function resetMazeGlowMaterials() {
   if (mazeGlowMaterial && scene) {
     mazeGlowMaterial.reset(scene);
+    if (typeof mazeGlowMaterial.setCount === "function") {
+      mazeGlowMaterial.setCount(mazeGlowCount);
+    }
   }
+}
+
+function getExtraMaterials() {
+  if (!mazeGlowMaterial) return [];
+  const previewBuilder = typeof MazeGlow.buildMesh === "function" ? () => MazeGlow.buildMesh() : null;
+  return [
+    {
+      name: mazeGlowMaterial.getName(),
+      desc: mazeGlowMaterial.getDescription(),
+      count: mazeGlowCount,
+      previewBuilder,
+    },
+  ];
 }
 
 function applyLightingForVariant(mode) {
@@ -1567,6 +1589,9 @@ function toggleVariantMode() {
 }
 
 function saveGameState() {
+  if (mazeGlowMaterial && typeof mazeGlowMaterial.getCount === "function") {
+    mazeGlowCount = mazeGlowMaterial.getCount();
+  }
   const checkpoint = getCurrentCheckpointPosition();
   const unlocked = Array.from(
     new Set(getUnlockedWeaponClasses().map((c) => c.name).filter(Boolean))
@@ -1579,6 +1604,9 @@ function saveGameState() {
     materials: {
       name: getMaterialName(),
       count: getMaterialCount(),
+    },
+    mazeGlow: {
+      count: mazeGlowCount,
     },
     checkpoint: checkpoint
       ? { x: checkpoint.x, y: checkpoint.y, z: checkpoint.z }
@@ -1632,6 +1660,14 @@ function applyGameState(data) {
     setMaterialCount(data.materials.count);
   }
 
+  // 2.5b) 迷宫蘑菇数量
+  if (data.mazeGlow && typeof data.mazeGlow.count === "number") {
+    mazeGlowCount = data.mazeGlow.count;
+    if (mazeGlowMaterial && typeof mazeGlowMaterial.setCount === "function") {
+      mazeGlowMaterial.setCount(mazeGlowCount);
+    }
+  }
+
   // 2.6) 戒指（拥有 & 装备）
   if (data.rings) {
     restoreRings(data.rings);
@@ -1683,6 +1719,10 @@ function startNewGame() {
   equipWeaponClass(null);
   setPoints(0);
   setMaterialCount(0);
+  mazeGlowCount = 0;
+  if (mazeGlowMaterial && typeof mazeGlowMaterial.setCount === "function") {
+    mazeGlowMaterial.setCount(0);
+  }
   resetRings();
   clearCheckpoints(scene);
   initCheckpoints(scene);

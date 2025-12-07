@@ -43,6 +43,7 @@ let getEquippedWeaponClass = null;
 let equipWeaponClassFn = null;
 let onEquipCallback = null;
 let onEquipRingCallback = null;
+let getExtraMaterialsFn = null;
 
 // 对外：解锁新武器（拾取时调用）
 export function unlockWeaponClass(WeaponClass) {
@@ -78,6 +79,7 @@ export function initInventoryUI(options) {
   equipWeaponClassFn     = options.equipWeaponClass;
   onEquipCallback       = options.onEquip || null;
   onEquipRingCallback   = options.onEquipRing || onEquipCallback || null;
+  getExtraMaterialsFn   = options.getExtraMaterials || null;
 
   dom.root       = document.getElementById("inventory-screen");
   dom.weaponList = document.getElementById("inv-weapon-list");
@@ -421,7 +423,17 @@ function getMaterialEntries() {
   const name = typeof getMaterialName === "function" ? getMaterialName() : "Material";
   const desc = typeof getMaterialDescription === "function" ? getMaterialDescription() : "";
   const count = typeof getMaterialCount === "function" ? getMaterialCount() : 0;
-  return [{ name, desc, count }];
+  const baseEntry = { name, desc, count };
+  const extras = typeof getExtraMaterialsFn === "function" ? getExtraMaterialsFn() || [] : [];
+  const normalizedExtras = extras
+    .filter((e) => e && typeof e.name === "string")
+    .map((e) => ({
+      name: e.name,
+      desc: e.desc || "",
+      count: Number.isFinite(e.count) ? e.count : 0,
+      previewBuilder: e.previewBuilder,
+    }));
+  return [baseEntry, ...normalizedExtras].filter((e) => e.count > 0);
 }
 
 function refreshSecondaryList(cat) {
@@ -480,7 +492,7 @@ function refreshSecondarySelection(cat) {
 
   if (dom.preview) {
     if (cat === "material") {
-      renderMaterialPreview(entry.name);
+      renderMaterialPreview(entry);
     } else if (cat === "ring") {
       renderRingPreview(entry);
     } else {
@@ -702,8 +714,9 @@ function renderWeaponPreview(WeaponClass, nameForFallback) {
   renderPreview();
 }
 
-function renderMaterialPreview(nameForFallback) {
+function renderMaterialPreview(entry) {
   if (!dom.preview) return;
+  const nameForFallback = entry?.name || "Material";
   initPreviewRenderer();
   if (!previewRenderer || !previewScene || !previewCamera) {
     dom.preview.textContent = `${nameForFallback} 的模型预览不可用`;
@@ -712,7 +725,9 @@ function renderMaterialPreview(nameForFallback) {
 
   clearPreviewMesh();
 
-  const mesh = buildMaterialPreviewMesh();
+  const mesh = entry && typeof entry.previewBuilder === "function"
+    ? entry.previewBuilder()
+    : buildMaterialPreviewMesh();
   if (!mesh) {
     dom.preview.textContent = `${nameForFallback} 的模型预览不可用`;
     return;
