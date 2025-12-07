@@ -1,22 +1,43 @@
 // FluorescentFlower.js
 // 荧光花材料实现，继承 MaterialBase。
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import { MaterialBase } from "./MaterialBase.js";
 
 export class FluorescentFlower extends MaterialBase {
   constructor() {
     const positions = [
-      new THREE.Vector3(4, 0, 4),
-      new THREE.Vector3(-6, 0, 8),
-      new THREE.Vector3(10, 0, -6),
-      new THREE.Vector3(-12, 0, -2),
+      // 庭院与入口
+      new THREE.Vector3(-2, 0, 6),
+      new THREE.Vector3(6, 0, 10),
+      new THREE.Vector3(-8, 0, 14),
+      new THREE.Vector3(10, 0, 18),
+      // 村口与栅栏内侧
+      new THREE.Vector3(-12, 0, 22),
+      new THREE.Vector3(0, 0, 24),
+      new THREE.Vector3(12, 0, 26),
+      // 村内道路两侧（避开房屋与检查点）
+      new THREE.Vector3(-14, 0, 32),
+      new THREE.Vector3(8, 0, 34),
+      new THREE.Vector3(-6, 0, 38),
+      new THREE.Vector3(14, 0, 44),
+      new THREE.Vector3(-10, 0, 48),
+      new THREE.Vector3(4, 0, 52),
+      new THREE.Vector3(-4, 0, 56),
+      // 迷宫入口与中段
+      new THREE.Vector3(-20, 0, 62),
+      new THREE.Vector3(-12, 0, 64),
+      new THREE.Vector3(-4, 0, 66),
+      new THREE.Vector3(-16, 0, 72),
+      // Boss 路线边缘（不挡路）
+      new THREE.Vector3(18, 0, 70),
+      new THREE.Vector3(22, 0, 76),
     ];
     super({
-      name: "荧光花",
+      name: "Fluorescent Flower",
       positions,
       pickupRadius: 2.0,
       buildMesh: FluorescentFlower.buildMesh,
-      description: "夜间会微微发光的花朵，可以作为材料收集。",
+      description: "A flower that glows softly at night; collectable as material.",
     });
   }
 

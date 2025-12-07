@@ -1,10 +1,19 @@
 // enemies/Enemy_Box.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import { EnemyBase } from "./EnemyBase.js";
 import { mapWalls } from "../Map.js";
 import { addPoints } from "../Points.js";
+import { GLTFLoader } from "../libs/CS559-Three/examples/jsm/loaders/GLTFLoader.js";
 
 const tmpVec3 = new THREE.Vector3();
+
+function isFancyVariant() {
+  try {
+    return localStorage?.getItem("ks_demo_variant") === "fancy";
+  } catch (e) {
+    return false;
+  }
+}
 
 export class Enemy_Box extends EnemyBase {
   constructor(scene, position) {
@@ -12,6 +21,9 @@ export class Enemy_Box extends EnemyBase {
       hp: 50,
       speed: 3.0,
     });
+
+    this.gltfHitTargets = [];
+    this.gltfBaseColors = [];
 
     // ========= 追击 / 攻击参数 =========
     this.chaseRange     = 10;
@@ -50,6 +62,35 @@ export class Enemy_Box extends EnemyBase {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+
+    if (isFancyVariant()) {
+      const loader = new GLTFLoader();
+      loader.load(
+        "Assets/Spider.glb",
+        (gltf) => {
+          const model = gltf.scene;
+          model.scale.setScalar(0.42);
+          model.position.set(0, -0.05, 0);
+          model.traverse((child) => {
+            if (child.isMesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+              if (child.material && child.material.color) {
+                this.gltfHitTargets.push(child.material);
+                this.gltfBaseColors.push(child.material.color.clone());
+              }
+            }
+          });
+          mesh.add(model);
+          if (mesh.material) mesh.material.visible = false;
+        },
+        undefined,
+        () => {
+          /* keep box fallback if load fails */
+        }
+      );
+    }
+
     return mesh;
   }
 
@@ -71,6 +112,11 @@ export class Enemy_Box extends EnemyBase {
     // 1. 受击闪色
     this.hitFlashTimer = this.hitFlashDuration;
     this.mesh.material.color.copy(this.hitColor);
+    if (this.gltfHitTargets.length > 0) {
+      this.gltfHitTargets.forEach((mat) => {
+        if (mat && mat.color) mat.color.copy(this.hitColor);
+      });
+    }
 
     // 2. 韧性削减
     if (poiseDamage > 0) {
@@ -103,6 +149,12 @@ export class Enemy_Box extends EnemyBase {
       this.hitFlashTimer -= dt;
       if (this.hitFlashTimer <= 0) {
         this.mesh.material.color.copy(this.baseColor);
+        if (this.gltfHitTargets.length > 0) {
+          this.gltfHitTargets.forEach((mat, idx) => {
+            const base = this.gltfBaseColors[idx];
+            if (mat && mat.color && base) mat.color.copy(base);
+          });
+        }
       }
     }
 

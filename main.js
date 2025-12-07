@@ -1,5 +1,5 @@
 // main.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import {
   createPlayer,
   updatePlayer,
@@ -24,6 +24,7 @@ import {
   restorePlayerStatus,
 } from "./player.js";
 import { Sword_Long } from "./Weapons/sword_long.js";
+import { Scythe } from "./Weapons/scythe.js";
 import { Sword_Box } from "./Weapons/sword_box.js";
 import {
   initMaterials,
@@ -35,8 +36,10 @@ import {
   getMaterialName,
   getMaterialPickupRadius,
   setDefaultMaterial,
-} from "./MaterialBase.js";
-import { FluorescentFlower } from "./FluorescentFlower.js";
+} from "./Materials/MaterialBase.js";
+import { FluorescentFlower } from "./Materials/FluorescentFlower.js";
+import { MysticRing } from "./Rings/Ring_Mystic.js";
+import { addRing, addRingById, resetRings, serializeRings, restoreRings, getEquippedRingId, equipRingById } from "./Rings/RingManager.js";
 
 import {
   initInventoryUI,
@@ -48,30 +51,67 @@ import {
   resetUnlockedWeapons,
 } from "./InventoryUI.js";
 
-import { buildMap } from "./Map.js";
+import { buildMap, setObstacleVisibility, mapWalls, getGroundMesh } from "./Map.js";
 import { enemies, initEnemies, updateEnemies, resetEnemies } from "./Manage_Enemies.js";
-import { initCheckpoints, handleCheckpointInteract, getCheckpointMeshes, clearCheckpoints, getCurrentCheckpointPosition, getCheckpointInteractRadius } from "./Checkpoint.js";
+import { initCheckpoints, handleCheckpointInteract, getCheckpointMeshes, clearCheckpoints, getCurrentCheckpointPosition, getCheckpointInteractRadius, setCheckpointActivatedCallback } from "./Checkpoint.js";
 import { getPoints, tryPickupDrop, handleDeathDrop, getDropPosition, setPoints, getDropRadius } from "./Points.js";
+import { GLTFLoader } from "./libs/CS559-Three/examples/jsm/loaders/GLTFLoader.js";
 
 const WeaponRegistry = {
   Sword_Box,
   Sword_Long,
+  Scythe,
 };
 
-// 设置默认材料类型
+const BASE_BG_COLOR = new THREE.Color(0x0b0b0f);
+// 精美版：稍微提高底色亮度，避免整体过暗
+const FANCY_BG_COLOR = new THREE.Color(0x1a2638);
+
+// 光照与雾配置，方便在两种模式间切换亮度
+const BASE_LIGHTING = {
+  ambientColor: 0x9ca0b0,
+  ambientIntensity: 0.9,
+  hemiSkyColor: 0xc8d8ff,
+  hemiGroundColor: 0x403020,
+  hemiIntensity: 0.7,
+  dirColor: 0xffffff,
+  dirIntensity: 1.35,
+  fogColor: 0x0f1014,
+  fogDensity: 0.03,
+  bgColor: BASE_BG_COLOR.getHex(),
+};
+
+const FANCY_LIGHTING = {
+  ambientColor: 0xd4e4ff,
+  ambientIntensity: 1.65,
+  hemiSkyColor: 0xf8fbff,
+  hemiGroundColor: 0x50382c,
+  hemiIntensity: 1.25,
+  dirColor: 0xffffff,
+  dirIntensity: 2.1,
+  fogColor: 0x24365a,
+  fogDensity: 0.01,
+  bgColor: new THREE.Color(0x1d2f48).getHex(),
+};
+
+// 设置默认材料类型（荧光花）
 setDefaultMaterial(new FluorescentFlower());
 
 let scene, camera, renderer, clock;
+let ambientLight, hemiLight, dirLight;
 
 // UI DOM
 let hpFillEl, hpTextEl, deathScreenEl;
 let chargeBgEl, chargeFillEl;
 let staminaFillEl;
 const weaponPickups = [];
+const ringPickups = [];
 let pointsTextEl;
 let pickupToastEl;
 let pickupToastTimer = null;
 let interactHintEl;
+let posIndicatorEl;
+let variantToggleEl;
 let menuRootEl;
 let btnNewGame;
 let btnContinue;
@@ -79,8 +119,33 @@ let weaponPickupSave = null; // 记录存档中武器拾取状态
 const tmpCamPos = new THREE.Vector3();
 const tmpForward = new THREE.Vector3();
 const tmpToTarget = new THREE.Vector3();
+const tmpBBox = new THREE.Box3();
+const tmpVecAlign = new THREE.Vector3();
 const SAVE_KEY = "ks_demo_save_v1";
+const VARIANT_KEY = "ks_demo_variant";
+let variantMode = "base";
+let fancyDecorations = [];
+let fancyColliders = [];
+let fancyTreeColliders = [];
+let hiddenBaseHouseColliders = [];
+const originalMaterials = new WeakMap();
+let fancyGroundTexture = null;
+let fancyPlasterTexture = null;
+let fancyStoneTexture = null;
+let fancyDirtTexture = null;
+let fancyCheckpointFX = [];
+let fancySmokeFX = [];
+let fancyBonfireTemplate = null;
+let fancySmokeTemplate = null;
+let fancyPillarTrees = [];
+let fancySky = null;
+let retroRT = null;
+let retroScene = null;
+let retroCamera = null;
+let retroQuad = null;
+let retroEnabled = false;
 let isMainMenuOpen = true;
+let torchLight = null;
 
 // 状态
 let isPlayerDead = false;
@@ -100,6 +165,8 @@ function init() {
   menuRootEl  = document.getElementById("main-menu");
   btnNewGame  = document.getElementById("btn-new-game");
   btnContinue = document.getElementById("btn-continue");
+  posIndicatorEl = document.getElementById("pos-indicator");
+  variantToggleEl = document.getElementById("variant-toggle");
 
     // 新增：蓄力条
   chargeBgEl   = document.getElementById("charge-bg");
@@ -120,8 +187,8 @@ function init() {
 
   // 场景 & 雾
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
-  scene.fog = new THREE.FogExp2(0x000000, 0.08);
+  scene.background = BASE_BG_COLOR.clone();
+  scene.fog = new THREE.FogExp2(0x0f1014, 0.03);
 
   // 相机
   camera = new THREE.PerspectiveCamera(
@@ -134,26 +201,48 @@ function init() {
   // 玩家
   createPlayer(scene, camera);
 
-  // 光照
-  const ambient = new THREE.AmbientLight(0x404040);
-  scene.add(ambient);
+  // 光照（更亮、更柔和；支持模式切换时调节强度）
+  ambientLight = new THREE.AmbientLight(
+    BASE_LIGHTING.ambientColor,
+    BASE_LIGHTING.ambientIntensity
+  );
+  scene.add(ambientLight);
 
-  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  dirLight.position.set(5, 10, 7);
+  hemiLight = new THREE.HemisphereLight(
+    BASE_LIGHTING.hemiSkyColor,
+    BASE_LIGHTING.hemiGroundColor,
+    BASE_LIGHTING.hemiIntensity
+  );
+  scene.add(hemiLight);
+
+  dirLight = new THREE.DirectionalLight(
+    BASE_LIGHTING.dirColor,
+    BASE_LIGHTING.dirIntensity
+  );
+  dirLight.position.set(10, 14, 6);
+  dirLight.castShadow = true;
+  dirLight.shadow.mapSize.set(2048, 2048);
+  dirLight.shadow.camera.left = -40;
+  dirLight.shadow.camera.right = 40;
+  dirLight.shadow.camera.top = 40;
+  dirLight.shadow.camera.bottom = -40;
   scene.add(dirLight);
 
   // 地图
   buildMap(scene);
 
   // 检查点
-    // 检查点
-    initCheckpoints(scene);
+  initCheckpoints(scene);
+  setCheckpointActivatedCallback(onCheckpointActivatedFancy);
 
-    // 材料
-    initMaterials(scene);
+  // 材料
+  initMaterials(scene);
 
     // 地图中的武器拾取
     initWeaponPickups(scene);
+
+    // 戒指拾取（迷宫终点）
+    initRingPickups(scene);
 
   // 如果页面没有 points 容器，动态创建一个
   if (!pointsTextEl) {
@@ -218,6 +307,13 @@ function init() {
     });
   }
 
+  // 版本切换按钮（基础版 <-> 精美版占位）
+  if (variantToggleEl) {
+    variantToggleEl.addEventListener("click", () => {
+      toggleVariantMode();
+    });
+  }
+
   // 敌人
   initEnemies(scene);
 
@@ -226,7 +322,20 @@ function init() {
     getEquippedWeaponClass: getCurrentWeaponClass,
     equipWeaponClass,
     onEquip: () => saveGameState(),
+    onEquipRing: () => saveGameState(),
   });
+
+  // 读取版本模式
+  applyVariantMode(loadVariantMode());
+  if (variantMode === "fancy") {
+    addFancyColliders();
+    loadFancyDecor();
+    applyFancyMaterials();
+    setupFancyCheckpoints();
+    addFancyPillarTrees();
+    addFancySky();
+    setupRetroPass();
+  }
 
   // 事件：键盘 —— 改成用本文件的 onKeyDown / onKeyUp 包一层
   document.addEventListener("keydown", onKeyDown);
@@ -324,6 +433,9 @@ function onKeyDown(event) {
     const pickedWeapon = tryPickupWeapon(scene, playerPos);
     if (pickedWeapon) return;
 
+    const pickedRing = tryPickupRing(scene, playerPos);
+    if (pickedRing) return;
+
     const didInteract = handleCheckpointInteract(playerPos, (cp) => {
       setCheckpointPosition(cp.mesh.position);
       restorePlayerStatus(cp.mesh.position);
@@ -353,6 +465,9 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  if (retroEnabled) {
+    setupRetroPass();
+  }
 }
 
 function animate() {
@@ -368,6 +483,8 @@ function animate() {
     updatePlayer(dt, scene, enemies);
     updateEnemies(dt, getPlayerPosition(), handleDamageFromEnemy);
   }
+
+  updateTorchLightPosition();
 
   // 更新 HP UI
   const hp = getPlayerHp();
@@ -413,9 +530,25 @@ function animate() {
     pointsTextEl.textContent = `Points: ${getPoints()}`;
   }
 
+  // 更新位置显示（右上角）
+  if (posIndicatorEl) {
+    const p = getPlayerPosition();
+    posIndicatorEl.textContent = `x:${p.x.toFixed(1)} y:${p.y.toFixed(1)} z:${p.z.toFixed(1)}`;
+  }
+
   updateInteractHint();
 
-  renderer.render(scene, camera);
+  if (variantMode === "fancy" && retroEnabled && retroRT && retroScene && retroCamera) {
+    renderer.setRenderTarget(retroRT);
+    renderer.clear();
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    renderer.clear();
+    renderer.render(retroScene, retroCamera);
+  } else {
+    renderer.setRenderTarget(null);
+    renderer.render(scene, camera);
+  }
 }
 
 // 敌人调用的伤害接口：包装一下 damagePlayer，用来触发死亡 UI
@@ -459,10 +592,11 @@ function respawnGame() {
 function initWeaponPickups(scene) {
   weaponPickups.length = 0;
 
-  // 一把断剑（靠近出生点） + 一把长剑（远处）
+  // 断剑（近战起步） + 长剑（第一检查点后） + 镰刀（出生点调试 & Boss 前）
   const pickups = [
     { pos: new THREE.Vector3(1.5, 0, 2.0), WeaponClass: Sword_Box },
-    { pos: new THREE.Vector3(-12, 0, -6), WeaponClass: Sword_Long },
+    { pos: new THREE.Vector3(0, 0, 36), WeaponClass: Sword_Long },
+    { pos: new THREE.Vector3(20, 0, 74), WeaponClass: Scythe },
   ];
 
   const geo = new THREE.ConeGeometry(0.2, 0.8, 12);
@@ -476,6 +610,619 @@ function initWeaponPickups(scene) {
     mesh.receiveShadow = true;
     scene.add(mesh);
     weaponPickups.push({ mesh, WeaponClass, collected: false });
+  });
+}
+
+// ========== 戒指拾取（迷宫终点神秘戒指） ==========
+function initRingPickups(scene) {
+  ringPickups.length = 0;
+
+  const pickups = [
+    // 迷宫终点房间中央，避开墙体略前移
+    { pos: new THREE.Vector3(-28, 0, 86), ringId: MysticRing.id },
+  ];
+
+  const geo = new THREE.TorusGeometry(0.28, 0.08, 8, 16);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x88ccff, emissive: 0x224466, emissiveIntensity: 0.5 });
+
+  pickups.forEach(({ pos, ringId }) => {
+    const mesh = new THREE.Mesh(geo, mat.clone());
+    mesh.position.copy(pos);
+    mesh.position.y = 0.6; // 抬高一些避免与地面或墙体重合
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    ringPickups.push({ mesh, ringId, collected: false });
+  });
+}
+
+function resetRingPickups(scene) {
+  ringPickups.forEach((rp) => {
+    if (rp.mesh && rp.mesh.parent === scene) {
+      scene.remove(rp.mesh);
+    }
+  });
+  initRingPickups(scene);
+}
+
+// ========== 精美版装饰（加载外部模型） ==========
+function clearFancyDecor() {
+  fancyDecorations.forEach((obj) => {
+    if (obj && obj.parent) obj.parent.remove(obj);
+  });
+  fancyDecorations = [];
+}
+
+function removeFancyColliders() {
+  if (!scene) return;
+  fancyColliders.forEach((c) => {
+    if (c && c.parent) c.parent.remove(c);
+    const idx = mapWalls.indexOf(c);
+    if (idx >= 0) mapWalls.splice(idx, 1);
+  });
+  fancyTreeColliders.forEach((c) => {
+    if (c && c.parent) c.parent.remove(c);
+    const idx = mapWalls.indexOf(c);
+    if (idx >= 0) mapWalls.splice(idx, 1);
+  });
+  fancyColliders = [];
+  fancyTreeColliders = [];
+
+  // 恢复基础房屋碰撞
+  hiddenBaseHouseColliders.forEach((c) => {
+    if (c && scene && !c.parent) scene.add(c);
+    if (mapWalls.indexOf(c) < 0) mapWalls.push(c);
+    if (c.material) c.material.visible = true;
+  });
+  hiddenBaseHouseColliders = [];
+
+  // 恢复基础版障碍可见/可碰撞
+  setObstacleVisibility("house", true);
+}
+
+function addFancyColliders() {
+  removeFancyColliders();
+  if (!scene) return;
+
+   // 隐藏基础版房屋几何和碰撞
+  setObstacleVisibility("house", false);
+
+  // 移除基础房屋碰撞体（保存以便切回基础版时恢复）
+  hiddenBaseHouseColliders = mapWalls.filter((c) => c.userData && c.userData.type === "house");
+  mapWalls.splice(0, mapWalls.length, ...mapWalls.filter((c) => !(c.userData && c.userData.type === "house")));
+  hiddenBaseHouseColliders.forEach((c) => {
+    if (c.parent) c.parent.remove(c);
+  });
+
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  // 精美版去除房屋和树木碰撞：不再创建对应碰撞盒
+}
+
+function clearFancyCheckpointFX() {
+  fancyCheckpointFX.forEach((obj) => {
+    if (obj && obj.parent) obj.parent.remove(obj);
+  });
+  fancyCheckpointFX = [];
+
+  fancySmokeFX.forEach((entry) => {
+    const obj = entry?.obj || entry;
+    if (obj && obj.parent) obj.parent.remove(obj);
+  });
+  fancySmokeFX = [];
+
+  const cps = getCheckpointMeshes();
+  cps.forEach((mesh) => {
+    if (mesh) mesh.visible = true;
+  });
+}
+
+function ensureFancyCheckpointAssets(onDone) {
+  let pending = 0;
+  const loader = new GLTFLoader();
+
+  const finish = () => {
+    pending -= 1;
+    if (pending <= 0 && typeof onDone === "function") onDone();
+  };
+
+  if (!fancyBonfireTemplate) {
+    pending += 1;
+    loader.load(
+      "Assets/Bonfire.glb",
+      (gltf) => {
+        fancyBonfireTemplate = gltf.scene;
+        finish();
+      },
+      undefined,
+      () => finish()
+    );
+  }
+
+  if (!fancySmokeTemplate) {
+    pending += 1;
+    loader.load(
+      "Assets/Smoke.glb",
+      (gltf) => {
+        fancySmokeTemplate = gltf.scene;
+        finish();
+      },
+      undefined,
+      () => finish()
+    );
+  }
+
+  if (pending === 0 && typeof onDone === "function") {
+    onDone();
+  }
+}
+
+function setupFancyCheckpoints() {
+  clearFancyCheckpointFX();
+  if (variantMode !== "fancy" || !scene) return;
+
+  const cps = getCheckpointMeshes();
+  if (!cps || cps.length === 0) return;
+
+  ensureFancyCheckpointAssets(() => {
+    if (variantMode !== "fancy" || !scene) return;
+
+    cps.forEach((mesh) => {
+      if (!mesh) return;
+
+      if (fancyBonfireTemplate) {
+        const fire = fancyBonfireTemplate.clone(true);
+        fire.position.set(mesh.position.x, 0, mesh.position.z);
+        fire.scale.setScalar(4.8);
+        fire.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        scene.add(fire);
+        fancyCheckpointFX.push(fire);
+      }
+
+      mesh.visible = false;
+    });
+  });
+}
+
+function spawnFancyCheckpointSmoke(cp) {
+  if (!cp || !cp.mesh || !scene) return;
+  const cpId = cp.mesh.uuid;
+
+  fancySmokeFX = fancySmokeFX.filter((entry) => {
+    if (entry && entry.cpId === cpId) {
+      const obj = entry.obj || entry;
+      if (obj && obj.parent) obj.parent.remove(obj);
+      return false;
+    }
+    return true;
+  });
+
+  const addSmoke = () => {
+    if (!fancySmokeTemplate || variantMode !== "fancy") return;
+    const smoke = fancySmokeTemplate.clone(true);
+    smoke.position.copy(cp.mesh.position);
+    smoke.position.y += 1.0;
+    smoke.scale.setScalar(0.24);
+    smoke.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = false;
+        child.receiveShadow = false;
+      }
+    });
+    scene.add(smoke);
+    fancySmokeFX.push({ cpId, obj: smoke });
+  };
+
+  if (!fancySmokeTemplate) {
+    ensureFancyCheckpointAssets(addSmoke);
+  } else {
+    addSmoke();
+  }
+}
+
+function onCheckpointActivatedFancy(cp) {
+  if (variantMode !== "fancy") return;
+  spawnFancyCheckpointSmoke(cp);
+}
+
+function applyFancyMaterials() {
+  const palette = {
+    wall: 0x4b5a70,
+    gate: 0x5d4635,
+    fence: 0x5a4230,
+    rock: 0x6b7078,
+    pillar: 0x6b6460,
+    ruin: 0x555555,
+    cliff: 0x2f3035,
+    tree: 0x2f5a38,
+    spike: 0x6a5a4a,
+    obelisk: 0x5a5f8a,
+    platform: 0x3a3f46,
+    default: 0x6a6a6a,
+  };
+
+  const ground = typeof getGroundMesh === "function" ? getGroundMesh() : null;
+  const texLoader = new THREE.TextureLoader();
+
+  if (!fancyGroundTexture) {
+    fancyGroundTexture = texLoader.load("Assets/ground_sand.jpg", (tex) => {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(18, 18);
+      tex.anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() || 8;
+      if (tex.colorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+    });
+    fancyGroundTexture.wrapS = fancyGroundTexture.wrapT = THREE.RepeatWrapping;
+    fancyGroundTexture.repeat.set(18, 18);
+    if (fancyGroundTexture.colorSpace !== undefined) fancyGroundTexture.colorSpace = THREE.SRGBColorSpace;
+  }
+
+  const rockTex = fancyGroundTexture.clone();
+  rockTex.wrapS = rockTex.wrapT = THREE.RepeatWrapping;
+  rockTex.repeat.set(8, 8);
+  if (rockTex.colorSpace !== undefined) rockTex.colorSpace = THREE.SRGBColorSpace;
+
+  if (!fancyPlasterTexture) {
+    fancyPlasterTexture = texLoader.load("Assets/plaster_wall.jpg", (tex) => {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(4, 4);
+      tex.anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() || 8;
+      if (tex.colorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+    });
+    fancyPlasterTexture.wrapS = fancyPlasterTexture.wrapT = THREE.RepeatWrapping;
+    fancyPlasterTexture.repeat.set(4, 4);
+    if (fancyPlasterTexture.colorSpace !== undefined) fancyPlasterTexture.colorSpace = THREE.SRGBColorSpace;
+  }
+
+  if (!fancyStoneTexture) {
+    fancyStoneTexture = texLoader.load("Assets/stone_wall.jpg", (tex) => {
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(3, 3);
+      tex.anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() || 8;
+      if (tex.colorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+    });
+    fancyStoneTexture.wrapS = fancyStoneTexture.wrapT = THREE.RepeatWrapping;
+    fancyStoneTexture.repeat.set(3, 3);
+    if (fancyStoneTexture.colorSpace !== undefined) fancyStoneTexture.colorSpace = THREE.SRGBColorSpace;
+  }
+
+  if (!fancyDirtTexture) {
+    // Use rock texture clone by default to avoid missing-asset requests; swap here if dirt_mound.jpg is added later.
+    fancyDirtTexture = rockTex.clone();
+  }
+
+  if (ground) {
+    if (!originalMaterials.has(ground)) {
+      originalMaterials.set(ground, ground.material);
+    }
+    ground.material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      metalness: 0.0,
+      map: fancyGroundTexture,
+    });
+  }
+
+  mapWalls.forEach((mesh) => {
+    const t = mesh.userData && mesh.userData.type;
+    if (!t || t === "house") return; // 房屋在精美版已隐藏
+    if (!originalMaterials.has(mesh)) {
+      originalMaterials.set(mesh, mesh.material);
+    }
+    const color = palette[t] || palette.default;
+    if (t === "rock") {
+      const useDirt = mesh.position.z >= 24 && mesh.position.z <= 40 && mesh.position.x >= -12 && mesh.position.x <= 12;
+      mesh.material = new THREE.MeshStandardMaterial({
+        color,
+        roughness: 0.92,
+        metalness: 0.05,
+        map: useDirt ? fancyDirtTexture : rockTex,
+      });
+    } else if (t === "wall" || t === "gate") {
+      mesh.material = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.78,
+        metalness: 0.08,
+        map: fancyStoneTexture,
+      });
+    } else if (t === "pillar") {
+      mesh.material = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.9,
+        metalness: 0.02,
+        map: fancyPlasterTexture,
+      });
+    } else {
+      mesh.material = new THREE.MeshToonMaterial({ color, gradientMap: null });
+    }
+  });
+}
+
+function clearFancySky() {
+  if (fancySky && scene) {
+    scene.remove(fancySky);
+  }
+  fancySky = null;
+  if (scene) {
+    scene.background = BASE_BG_COLOR.clone();
+  }
+}
+
+function addFancySky() {
+  clearFancySky();
+  if (!scene) return;
+
+  const group = new THREE.Group();
+
+  const domeGeo = new THREE.SphereGeometry(600, 32, 24);
+  // 精美版天空改为蓝紫色调，提升整体亮度
+  const domeMat = new THREE.MeshBasicMaterial({ color: 0x101a2d, side: THREE.BackSide, fog: false });
+  const dome = new THREE.Mesh(domeGeo, domeMat);
+  group.add(dome);
+
+  const moonGeo = new THREE.SphereGeometry(12, 64, 48);
+  const moonMat = new THREE.MeshStandardMaterial({
+    color: 0x553a2a,
+    emissive: 0xff8870,
+    emissiveIntensity: 1.2,
+    roughness: 0.34,
+    metalness: 0.02,
+    fog: false,
+  });
+  const moon = new THREE.Mesh(moonGeo, moonMat);
+  moon.position.set(-60, 110, -140);
+  moon.castShadow = false;
+  moon.receiveShadow = false;
+  group.add(moon);
+
+  const glowGeo = new THREE.SphereGeometry(26, 32, 24);
+  const glowMat = new THREE.MeshBasicMaterial({ color: 0xff8870, transparent: true, opacity: 0.14, side: THREE.BackSide, fog: false });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.position.copy(moon.position);
+  group.add(glow);
+
+  scene.add(group);
+  fancySky = group;
+  scene.background = FANCY_BG_COLOR.clone();
+}
+
+function clearFancyPillarTrees() {
+  fancyPillarTrees.forEach((obj) => {
+    if (obj && obj.parent) obj.parent.remove(obj);
+  });
+  fancyPillarTrees = [];
+
+  mapWalls.forEach((mesh) => {
+    if (mesh && mesh.userData && mesh.userData.type === "pillar") {
+      mesh.visible = true;
+    }
+  });
+}
+
+function disposeRetroPass() {
+  if (retroRT) {
+    retroRT.dispose();
+    retroRT = null;
+  }
+  if (retroQuad) {
+    if (retroQuad.material) retroQuad.material.dispose();
+    if (retroQuad.geometry) retroQuad.geometry.dispose();
+  }
+  retroScene = null;
+  retroCamera = null;
+  retroQuad = null;
+  retroEnabled = false;
+}
+
+function setupRetroPass() {
+  retroEnabled = true;
+  const w = Math.max(160, Math.floor(window.innerWidth * 0.6));
+  const h = Math.max(120, Math.floor(window.innerHeight * 0.6));
+
+  if (!retroScene) {
+    retroScene = new THREE.Scene();
+    retroCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const quadGeo = new THREE.PlaneGeometry(2, 2);
+    const quadMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: null },
+        levels: { value: 6.0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        uniform sampler2D tDiffuse;
+        uniform float levels;
+        void main() {
+          vec4 c = texture2D(tDiffuse, vUv);
+          c.rgb = floor(c.rgb * levels) / levels;
+          gl_FragColor = c;
+        }
+      `,
+      depthTest: false,
+      depthWrite: false,
+    });
+    retroQuad = new THREE.Mesh(quadGeo, quadMat);
+    retroScene.add(retroQuad);
+  }
+
+  if (retroRT) retroRT.dispose();
+  retroRT = new THREE.WebGLRenderTarget(w, h, {
+    minFilter: THREE.NearestFilter,
+    magFilter: THREE.NearestFilter,
+    generateMipmaps: false,
+  });
+  if (retroQuad && retroQuad.material && retroQuad.material.uniforms) {
+    retroQuad.material.uniforms.tDiffuse.value = retroRT.texture;
+  }
+}
+
+function addFancyPillarTrees() {
+  clearFancyPillarTrees();
+  if (variantMode !== "fancy" || !scene) return;
+
+  const pillars = mapWalls.filter((m) => m && m.userData && m.userData.type === "pillar");
+  if (pillars.length === 0) return;
+
+  const loader = new GLTFLoader();
+  loader.load(
+    "Assets/Tree.glb",
+    (gltf) => {
+      pillars.forEach((pillar) => {
+        const tree = gltf.scene.clone(true);
+        tree.position.copy(pillar.position);
+        tree.scale.setScalar(1.4);
+        tree.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        alignObjectToGround(tree, 0);
+        scene.add(tree);
+        fancyPillarTrees.push(tree);
+        pillar.visible = false; // keep collider but hide old pillar mesh
+      });
+    },
+    undefined,
+    () => {
+      /* ignore load failure; keep pillars visible */
+    }
+  );
+}
+
+function restoreBaseMaterials() {
+  mapWalls.forEach((mesh) => {
+    const baseMat = originalMaterials.get(mesh);
+    if (baseMat) {
+      mesh.material = baseMat;
+      originalMaterials.delete(mesh);
+    }
+  });
+  const ground = typeof getGroundMesh === "function" ? getGroundMesh() : null;
+  if (ground) {
+    const baseMat = originalMaterials.get(ground);
+    if (baseMat) {
+      ground.material = baseMat;
+      originalMaterials.delete(ground);
+    }
+  }
+}
+
+function loadFancyDecor() {
+  clearFancyDecor();
+  if (!scene) return;
+
+  const loader = new GLTFLoader();
+
+  const placements = [
+    // 多样岩石
+    { file: "Assets/Rock Large.glb",        pos: new THREE.Vector3(6, 0, 28),    scale: 0.9 },
+    { file: "Assets/Rock Large-54jZKTAt5p.glb", pos: new THREE.Vector3(-8, 0, 30),   scale: 0.9 },
+    { file: "Assets/Rock-RtLRqYjfMs.glb",   pos: new THREE.Vector3(-3, 0, 28),    scale: 1.0 },
+    { file: "Assets/Rocks.glb",             pos: new THREE.Vector3(-26, 0, 70),   scale: 1.2 },
+    { file: "Assets/Rocks-OQvi8PIZ40.glb",  pos: new THREE.Vector3(-20, 0, 66),   scale: 1.1 },
+    { file: "Assets/Rock.glb",              pos: new THREE.Vector3(20, 0, 76),    scale: 1.0 },
+
+    // 幻想建筑替换基础房屋（位置对齐基础版）
+    { file: "Assets/Fantasy House.glb",             pos: new THREE.Vector3(-12, 0, 36), scale: 2.4, rotY: Math.PI * 0.08 },
+    { file: "Assets/Fantasy House-BH2XHWUNmF.glb",  pos: new THREE.Vector3(12, 0, 34),  scale: 2.5, rotY: -Math.PI * 0.1 },
+    { file: "Assets/Fantasy House-dcPho4SUA3.glb",  pos: new THREE.Vector3(-4, 0, 42),  scale: 2.5, rotY: Math.PI * 0.18 },
+    { file: "Assets/Fantasy Inn.glb",               pos: new THREE.Vector3(-16, 0, 52), scale: 2.8, rotY: Math.PI * 0.12 },
+    { file: "Assets/Fantasy Stable.glb",            pos: new THREE.Vector3(8, 0, 52),   scale: 2.8, rotY: -Math.PI * 0.12 },
+    { file: "Assets/Fantasy Barracks.glb",          pos: new THREE.Vector3(-10, 0, 60), scale: 2.8, rotY: Math.PI * 0.06 },
+    { file: "Assets/Wooden Fortress.glb",           pos: new THREE.Vector3(18, 0, 66),  scale: 3.2, rotY: Math.PI * 0.5 },
+
+    // 树木与自然点缀
+    { file: "Assets/Tree.glb",           pos: new THREE.Vector3(-12, 0, 34), scale: 1.2 },
+    { file: "Assets/Tree-QeYQEpgPcC.glb",pos: new THREE.Vector3(14, 0, 38),  scale: 1.3 },
+    { file: "Assets/Pine.glb",           pos: new THREE.Vector3(-30, 0, 72), scale: 1.5 },
+    { file: "Assets/Pine Trees.glb",     pos: new THREE.Vector3(-20, 0, 80), scale: 1.1 },
+    { file: "Assets/Dead Trees.glb",     pos: new THREE.Vector3(6, 0, 68),   scale: 0.9 },
+    { file: "Assets/Trees.glb",          pos: new THREE.Vector3(-34, 0, 90), scale: 1.1 },
+
+    // 村口/庭院装饰
+    { file: "Assets/Fence.glb",          pos: new THREE.Vector3(0, 0, 24),   scale: 1.05 },
+
+    // 出生点附近小装饰（无碰撞）
+    { file: "Assets/Bag.glb",            pos: new THREE.Vector3(2, 0, 10),    scale: 0.8 },
+    { file: "Assets/Barrel.glb",         pos: new THREE.Vector3(-10, 0, 14),  scale: 0.85 },
+    { file: "Assets/Tumbleweed.glb",     pos: new THREE.Vector3(-6, 0, 8),    scale: 0.65 },
+    { file: "Assets/Crate.glb",          pos: new THREE.Vector3(10, 0, 16),   scale: 0.85 },
+
+    // 市集与生活气息
+    { file: "Assets/Cart.glb",           pos: new THREE.Vector3(6, 0, 32),   scale: 3.5, rotY: Math.PI * 0.6 },
+    { file: "Assets/Crate.glb",          pos: new THREE.Vector3(10, 0, 32),  scale: 0.9 },
+    { file: "Assets/Barrel.glb",         pos: new THREE.Vector3(-6, 0, 32),  scale: 0.9 },
+    { file: "Assets/Hay.glb",            pos: new THREE.Vector3(-2, 0, 34),  scale: 9.0 },
+
+    // 水井与聚会场景
+    { file: "Assets/Well.glb",           pos: new THREE.Vector3(0, 0, 52),   scale: 5.5 },
+    { file: "Assets/Gazebo.glb",         pos: new THREE.Vector3(18, 0, 58),  scale: 1.6, rotY: Math.PI * 0.5 },
+
+    // 迷宫/外围氛围（无碰撞，放在通道边缘）
+    { file: "Assets/Dead Trees.glb",     pos: new THREE.Vector3(-30, 0, 70), scale: 0.8 },
+    { file: "Assets/Tumbleweed.glb",     pos: new THREE.Vector3(-24, 0, 78), scale: 0.75 },
+    { file: "Assets/Dead Trees.glb",     pos: new THREE.Vector3(-34, 0, 74), scale: 0.6 },
+    { file: "Assets/Rocks.glb",          pos: new THREE.Vector3(-22, 0, 82), scale: 0.7 },
+    { file: "Assets/Tumbleweed.glb",     pos: new THREE.Vector3(-28, 0, 64), scale: 0.65 },
+  ];
+
+  placements.forEach(({ file, pos, scale, rotY }) => {
+    loader.load(file, (gltf) => {
+      const obj = gltf.scene;
+      obj.position.copy(pos);
+      obj.scale.setScalar(scale || 1);
+      if (rotY) obj.rotation.y = rotY;
+      obj.traverse((n) => {
+        if (n.isMesh) {
+          n.castShadow = true;
+          n.receiveShadow = true;
+        }
+      });
+      alignObjectToGround(obj, 0);
+      scene.add(obj);
+      fancyDecorations.push(obj);
+    });
+  });
+}
+
+function tryPickupRing(scene, playerPos) {
+  const R = 2.0;
+  for (const rp of ringPickups) {
+    if (rp.collected || !rp.mesh) continue;
+    const dist = rp.mesh.position.distanceTo(playerPos);
+    if (dist <= R) {
+      rp.collected = true;
+      scene.remove(rp.mesh);
+      addRingById(rp.ringId);
+      const name = MysticRing.name;
+      showPickupToast(`拾取：${name}`);
+      saveGameState();
+      return true;
+    }
+  }
+  return false;
+}
+
+function applyRingPickupState(states) {
+  if (!Array.isArray(states)) return;
+  ringPickups.forEach((rp, idx) => {
+    if (!rp.mesh) return;
+    const collected = !!states[idx];
+    rp.collected = collected;
+    if (collected && rp.mesh.parent === scene) {
+      scene.remove(rp.mesh);
+    }
   });
 }
 
@@ -498,7 +1245,7 @@ function tryPickupWeapon(scene, playerPos) {
       wp.collected = true;
       scene.remove(wp.mesh);
       unlockWeaponClass(wp.WeaponClass);
-      const name = wp.WeaponClass.displayName || wp.WeaponClass.name || "武器";
+      const name = wp.WeaponClass.displayName || wp.WeaponClass.name || "Weapon";
       showPickupToast(`拾取：${name}`);
       saveGameState();
       return true;
@@ -536,7 +1283,7 @@ function findInteractTarget() {
   const dropPos = getDropPosition();
   const dropR = typeof getDropRadius === "function" ? getDropRadius() : maxDist;
   if (dropPos && isInSight(tmpCamPos, tmpForward, dropPos, dropR, maxAngle, tmpToTarget)) {
-    return "按 E 拾取点数";
+    return "Press E to pick up points";
   }
 
   // 材料
@@ -548,7 +1295,7 @@ function findInteractTarget() {
     if (!mesh) continue;
     const matPos = mesh.getWorldPosition ? mesh.getWorldPosition(tmpToTarget) : mesh.position;
     if (isInSight(tmpCamPos, tmpForward, matPos, matHintR, maxAngle, tmpToTarget)) {
-      return `按 E 拾取 ${matName || "材料"}`;
+      return `Press E to pick up ${matName || "material"}`;
     }
   }
 
@@ -558,8 +1305,18 @@ function findInteractTarget() {
     if (wp.collected || !wp.mesh) continue;
     const pos = wp.mesh.position;
     if (isInSight(tmpCamPos, tmpForward, pos, weaponR, maxAngle, tmpToTarget)) {
-      const name = wp.WeaponClass.displayName || wp.WeaponClass.name || "武器";
-      return `按 E 拾取 ${name}`;
+      const name = wp.WeaponClass.displayName || wp.WeaponClass.name || "Weapon";
+      return `Press E to pick up ${name}`;
+    }
+  }
+
+  // 戒指拾取
+  const ringR = 2.0;
+  for (const rp of ringPickups) {
+    if (rp.collected || !rp.mesh) continue;
+    const pos = rp.mesh.position;
+    if (isInSight(tmpCamPos, tmpForward, pos, ringR, maxAngle, tmpToTarget)) {
+      return `按 E 拾取 ${MysticRing.name}`;
     }
   }
 
@@ -570,7 +1327,7 @@ function findInteractTarget() {
     if (!mesh) continue;
     const pos = mesh.position;
     if (isInSight(tmpCamPos, tmpForward, pos, cpR, maxAngle, tmpToTarget)) {
-      return "按 E 交互检查点";
+      return "Press E to interact with checkpoint";
     }
   }
 
@@ -586,6 +1343,146 @@ function isInSight(camPos, forward, targetPos, maxDist, maxAngle, tmpVec) {
   return angle <= maxAngle;
 }
 
+function ensureTorchLight() {
+  if (torchLight || !scene) return;
+  // 温暖点光源，模拟手持火把
+  torchLight = new THREE.PointLight(0xffc270, 5, 30, 3);
+  torchLight.castShadow = false; // 避免成本过高
+  torchLight.position.set(0, 2, 0);
+  scene.add(torchLight);
+}
+
+function alignObjectToGround(obj, groundY = 0) {
+  if (!obj) return;
+  tmpBBox.setFromObject(obj);
+  if (!tmpBBox.isEmpty()) {
+    const lift = groundY - tmpBBox.min.y;
+    if (Math.abs(lift) > 1e-3) {
+      obj.position.y += lift;
+    }
+  }
+}
+
+function removeTorchLight() {
+  if (torchLight && scene) {
+    scene.remove(torchLight);
+    if (torchLight.dispose) {
+      torchLight.dispose();
+    }
+  }
+  torchLight = null;
+}
+
+function updateTorchLightPosition() {
+  if (!torchLight || variantMode !== "fancy") return;
+  const p = getPlayerPosition();
+  // 稍微抬高并放到视线前方，避免遮挡视角
+  tmpToTarget.set(0, 0, -1);
+  if (camera) {
+    camera.getWorldDirection(tmpToTarget);
+  }
+  torchLight.position.copy(p).addScaledVector(tmpToTarget, 0.9);
+  torchLight.position.y += 1.6;
+}
+
+function applyLightingForVariant(mode) {
+  const cfg = mode === "fancy" ? FANCY_LIGHTING : BASE_LIGHTING;
+  if (ambientLight) {
+    ambientLight.color.setHex(cfg.ambientColor);
+    ambientLight.intensity = cfg.ambientIntensity;
+  }
+  if (hemiLight) {
+    hemiLight.color.setHex(cfg.hemiSkyColor);
+    hemiLight.groundColor.setHex(cfg.hemiGroundColor);
+    hemiLight.intensity = cfg.hemiIntensity;
+  }
+  if (dirLight) {
+    dirLight.color.setHex(cfg.dirColor);
+    dirLight.intensity = cfg.dirIntensity;
+  }
+  if (scene && scene.fog) {
+    scene.fog.color.setHex(cfg.fogColor);
+    scene.fog.density = cfg.fogDensity;
+  }
+  // 清屏颜色与天空同步：若精美版已添加天空，则保持天空背景
+  const shouldSetBackground = !(mode === "fancy" && fancySky);
+  if (scene && shouldSetBackground) {
+    scene.background = new THREE.Color(cfg.bgColor);
+  }
+  if (renderer) {
+    renderer.setClearColor(cfg.bgColor);
+  }
+  if (mode === "fancy") {
+    ensureTorchLight();
+  } else {
+    removeTorchLight();
+  }
+}
+
+function loadVariantMode() {
+  try {
+    const v = localStorage.getItem(VARIANT_KEY);
+    return v === "fancy" ? "fancy" : "base";
+  } catch (err) {
+    return "base";
+  }
+}
+
+function saveVariantMode(mode) {
+  try {
+    localStorage.setItem(VARIANT_KEY, mode);
+  } catch (err) {
+    /* ignore */
+  }
+}
+
+function applyVariantMode(mode) {
+  variantMode = mode === "fancy" ? "fancy" : "base";
+  if (document && document.body) {
+    document.body.setAttribute("data-variant", variantMode);
+  }
+  if (variantToggleEl) {
+    variantToggleEl.textContent = variantMode === "fancy" ? "Switch to: Base" : "Switch to: Fancy";
+  }
+  applyLightingForVariant(variantMode);
+  // 隐藏/显示基础房屋以便用外部模型替换视觉
+  if (typeof setObstacleVisibility === "function") {
+    setObstacleVisibility("house", variantMode !== "fancy");
+  }
+  if (variantMode !== "fancy") {
+    removeFancyColliders();
+    restoreBaseMaterials();
+    clearFancyCheckpointFX();
+    clearFancyPillarTrees();
+    clearFancySky();
+    disposeRetroPass();
+  }
+  showPickupToast(`Switched to ${variantMode === "fancy" ? "Fancy" : "Base"}`);
+}
+
+function toggleVariantMode() {
+  const next = variantMode === "fancy" ? "base" : "fancy";
+  applyVariantMode(next);
+  if (next === "fancy") {
+    addFancyColliders();
+    loadFancyDecor();
+    applyFancyMaterials();
+    setupFancyCheckpoints();
+    addFancyPillarTrees();
+    addFancySky();
+    setupRetroPass();
+  } else {
+    clearFancyDecor();
+    removeFancyColliders();
+    restoreBaseMaterials();
+    clearFancyCheckpointFX();
+    clearFancyPillarTrees();
+    clearFancySky();
+    disposeRetroPass();
+  }
+  saveVariantMode(next);
+}
+
 function saveGameState() {
   const checkpoint = getCurrentCheckpointPosition();
   const unlocked = Array.from(
@@ -593,6 +1490,7 @@ function saveGameState() {
   );
   const equipped = getCurrentWeaponClass();
   const weaponPickupStates = weaponPickups.map((wp) => !!wp.collected);
+  const ringPickupStates = ringPickups.map((rp) => !!rp.collected);
   const payload = {
     points: getPoints(),
     materials: {
@@ -605,12 +1503,16 @@ function saveGameState() {
     unlocked,
     equipped: equipped ? equipped.name : null,
     weaponPickupStates,
+    ringPickupStates,
+    rings: serializeRings(),
+    variantMode,
+    equippedRingId: getEquippedRingId ? getEquippedRingId() : null,
   };
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
     refreshContinueButton();
   } catch (err) {
-    console.warn("保存失败", err);
+    console.warn("Save failed", err);
   }
 }
 
@@ -620,7 +1522,7 @@ function loadSavedState() {
     if (!raw) return null;
     return JSON.parse(raw);
   } catch (err) {
-    console.warn("读取存档失败", err);
+    console.warn("Failed to load save", err);
     return null;
   }
 }
@@ -647,6 +1549,21 @@ function applyGameState(data) {
     setMaterialCount(data.materials.count);
   }
 
+  // 2.6) 戒指（拥有 & 装备）
+  if (data.rings) {
+    restoreRings(data.rings);
+  } else if (data.equippedRingId) {
+    // 兼容旧存档：只有 equippedRingId 时，视为已拥有并装备
+    addRingById(data.equippedRingId);
+    equipRingById(data.equippedRingId);
+  }
+
+  // 2.7) 版本模式
+  if (data.variantMode) {
+    applyVariantMode(data.variantMode);
+    saveVariantMode(data.variantMode);
+  }
+
   // 3) 位置与检查点
   if (data.checkpoint) {
     const pos = new THREE.Vector3(data.checkpoint.x, data.checkpoint.y, data.checkpoint.z);
@@ -667,25 +1584,39 @@ function applyGameState(data) {
 
   // 5) 武器拾取刷新状态
   applyWeaponPickupState(data.weaponPickupStates);
+
+  // 6) 戒指拾取刷新状态
+  applyRingPickupState(data.ringPickupStates);
 }
 
 function startNewGame() {
   try {
     localStorage.removeItem(SAVE_KEY);
   } catch (err) {
-    console.warn("清除存档失败", err);
+    console.warn("Failed to clear save", err);
   }
 
   resetUnlockedWeapons();
   equipWeaponClass(null);
   setPoints(0);
   setMaterialCount(0);
+  resetRings();
   clearCheckpoints(scene);
   initCheckpoints(scene);
+  if (variantMode === "fancy") {
+    setupFancyCheckpoints();
+    addFancyPillarTrees();
+    addFancySky();
+  } else {
+    clearFancyCheckpointFX();
+    clearFancyPillarTrees();
+    clearFancySky();
+  }
   resetMaterials(scene);
   resetPlayerState();
   resetEnemies(scene);
   resetWeaponPickups(scene);
+  resetRingPickups(scene);
   refreshContinueButton();
   closeMainMenu();
   requestPointerLockIfPossible();
@@ -695,7 +1626,7 @@ function continueGame() {
   const data = loadSavedState();
   if (!data) {
     if (pickupToastEl) {
-      pickupToastEl.textContent = "无存档可继续";
+      pickupToastEl.textContent = "No save available";
       pickupToastEl.style.display = "block";
     }
     refreshContinueButton();
@@ -703,6 +1634,18 @@ function continueGame() {
   }
 
   applyGameState(data);
+  if (data && data.variantMode) {
+    applyVariantMode(data.variantMode);
+  }
+  if (variantMode === "fancy") {
+    setupFancyCheckpoints();
+    addFancyPillarTrees();
+    addFancySky();
+  } else {
+    clearFancyCheckpointFX();
+    clearFancyPillarTrees();
+    clearFancySky();
+  }
   closeMainMenu();
   requestPointerLockIfPossible();
 }

@@ -1,30 +1,50 @@
 // Manage_Enemies.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
-import { Enemy_Box } from "../enemies/Enemy_Box.js";
+import * as THREE from "three";
+import { Enemy_Box } from "./Enemies/Enemy_Box.js";
+import { Enemy_Spear } from "./Enemies/Enemy_Spear.js";
+import { Enemy_Boss } from "./Enemies/Enemy_Boss.js";
 
 export const enemies = [];
 
 // 用于敌人-敌人碰撞的临时向量
 const _tmpVec3 = new THREE.Vector3();
 
-// 安全的刷怪点（避开建筑）——可以自己改位置
+// 刷怪点：出生与复活点留空，首个检查点前 2 只，之后再增加
+// type: "basic" | "advanced" | "boss"
 const ENEMY_SPAWN_POINTS = [
-  { x: -15, z: -8 },
-  { x:  15, z: -8 },
-  { x:   0, z: -22 },
+  // 首 checkpoint 前：在庭院出口与木栅后，避开出生/复活区 (cp1 at z=8)
+  { x: -6, z: 18, type: "basic" },
+  { x: 6,  z: 22, type: "basic" },
+  // checkpoint2 (z=40) 之后到 checkpoint3 前 (z=65)
+  { x: -6,  z: 48, type: "basic" },
+  { x: 6,   z: 52, type: "basic" },
+  // 避开建筑：放到中路稍偏左
+  { x: -4, z: 58, type: "advanced" },
+  // checkpoint3 后的尾段
+  // 避开建筑：放到中路偏右
+  { x: 6,  z: 64, type: "advanced" },
+  { x: -8,  z: 76, type: "basic" },
+  // 迷宫内部刷怪（适度密度，避开墙体）
+  { x: -28, z: 64, type: "basic" },
+  { x: -30, z: 76, type: "advanced" },
+  { x: -26, z: 84, type: "basic" },
+  // Boss 区域（远端右侧围起来的小场地）
+  { x: 32, z: 74, type: "boss" },
 ];
 
 export function initEnemies(scene) {
   clearEnemies(scene);
   for (const p of ENEMY_SPAWN_POINTS) {
-    spawnEnemy(scene, p.x, p.z);
+    spawnEnemy(scene, p.x, p.z, p.type);
   }
 }
 
-export function spawnEnemy(scene, x, z) {
+export function spawnEnemy(scene, x, z, type = "basic") {
   const pos = new THREE.Vector3(x, 0, z);
-  const enemy = new Enemy_Box(scene, pos);
+  const Cls = type === "advanced" ? Enemy_Spear : type === "boss" ? Enemy_Boss : Enemy_Box;
+  const enemy = new Cls(scene, pos);
   enemies.push(enemy);
+  return enemy;
 }
 
 export function clearEnemies(scene) {

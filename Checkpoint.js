@@ -1,6 +1,6 @@
 // Checkpoint.js
 // 简单的检查点系统：球体表示，按 E 交互后变色并记录复活点
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 
 const COLOR_IDLE = 0x5555aa;
 const COLOR_ACTIVE = 0x55aa55;
@@ -12,12 +12,21 @@ export function getCheckpointInteractRadius() {
 
 const checkpoints = [];
 let lastActivated = null;
+let onCheckpointActivated = null;
 
 // 避开现有建筑物的检查点位置
 const DEFAULT_POINTS = [
-  new THREE.Vector3(0, 0, -3),    // 中央稍前
-  new THREE.Vector3(12, 0, -6),   // 右侧空地
-  new THREE.Vector3(-14, 0, -6),  // 左侧空地
+  new THREE.Vector3(0, 0, 8),     // 出生庭院中轴，远离墙与敌人
+  new THREE.Vector3(0, 0, 40),    // 第二个检查点更远，位于中后段主路
+
+  // Boss 房前入口左侧，避免挡路
+  new THREE.Vector3(22, 0, 76),
+
+  // 迷宫入口（北侧开口 x≈-28,z≈58 附近，稍往里放以防贴墙）
+  new THREE.Vector3(-28, 0, 62),
+
+  // 迷宫内部（终点前的转折处，便于失败后快速回收戒指）
+  new THREE.Vector3(-28, 0, 84),
 ];
 
 export function initCheckpoints(scene) {
@@ -80,6 +89,9 @@ export function handleCheckpointInteract(playerPos, onActivated) {
   if (typeof onActivated === "function") {
     onActivated(cp);
   }
+  if (typeof onCheckpointActivated === "function") {
+    onCheckpointActivated(cp);
+  }
   return true;
 }
 
@@ -91,4 +103,9 @@ export function getCurrentCheckpointPosition() {
 
 export function getCheckpointMeshes() {
   return checkpoints.map((cp) => cp.mesh).filter(Boolean);
+}
+
+// 为外部注册回调：当 checkpoint 激活时调用（用于精美版视觉特效）
+export function setCheckpointActivatedCallback(cb) {
+  onCheckpointActivated = cb;
 }

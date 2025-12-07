@@ -1,10 +1,10 @@
 // weapons/sword_long.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import { WeaponSwordBase } from "./WeaponSwordBase.js";
 
 export class Sword_Long extends WeaponSwordBase {
-  static displayName = "长剑";
-  static description = "更长的单手剑，攻击距离和伤害略高。";
+  static displayName = "Longsword";
+  static description = "Longer one-handed sword with slightly greater reach and damage.";
   static stats = {
     damage: 14,
     range: 4.2,

@@ -1,5 +1,11 @@
 // weapons/WeaponSwordBase.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
+
+let globalOnDealDamage = null;
+
+export function setGlobalWeaponOnDealDamage(fn) {
+  globalOnDealDamage = typeof fn === "function" ? fn : null;
+}
 
 export class WeaponSwordBase {
   constructor(camera, config = {}) {
@@ -390,6 +396,10 @@ getIdlePose() {
           knockbackDir: hitDir,
           knockbackPower,
         });
+
+        if (globalOnDealDamage) {
+          globalOnDealDamage(finalDamage);
+        }
       }
     }
   }

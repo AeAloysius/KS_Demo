@@ -1,12 +1,12 @@
 // weapons/sword_box.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import { WeaponSwordBase } from "./WeaponSwordBase.js";
 
 
 export class Sword_Box extends WeaponSwordBase {
   // 可选：给背包用的元数据
-  static displayName = "断剑";
-  static description = "普通的钢制短剑，蓄力后可以打出更高的伤害和削韧。";
+  static displayName = "Broken Sword";
+  static description = "Plain short steel sword; charged attacks deal higher damage and poise break.";
   static stats = {
     damage: 10,
     range: 3.5,

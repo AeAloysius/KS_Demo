@@ -1,6 +1,6 @@
 // MaterialBase.js
 // 抽象材料基类，负责位置、拾取、计数与刷新。
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 
 let defaultMaterial = null;
 

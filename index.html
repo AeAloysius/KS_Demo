@@ -138,6 +138,45 @@
       transition: width 0.1s linear;
     }
 
+    /* 右上角位置坐标显示 */
+    #pos-indicator {
+      position: fixed;
+      right: 16px;
+      top: 16px;
+      padding: 6px 10px;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      font-size: 12px;
+      font-family: monospace;
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 6px;
+      z-index: 22;
+      pointer-events: none;
+      text-shadow: 0 0 4px #000;
+    }
+
+    /* 右上角版本切换按钮 */
+    #variant-toggle {
+      position: fixed;
+      right: 16px;
+      top: 56px;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 6px;
+      z-index: 23;
+      cursor: pointer;
+      backdrop-filter: blur(2px);
+      transition: background 0.12s ease, transform 0.08s ease;
+    }
+
+    #variant-toggle:hover {
+      background: rgba(255, 255, 255, 0.18);
+      transform: translateY(-1px);
+    }
+
     
 
         /* ==== 蓄力条 ==== */
@@ -527,7 +566,7 @@
 </head>
 
 <body>
-  <div id="hint">点击画面锁定鼠标，WASD 移动，空格跳跃，左键攻击，Tab 打开背包</div>
+  <div id="hint">Click to lock mouse to screen, WASD to move, Spacebar to jump, Left mouse button to attack, Tab to open inventory, Shift to dodge/sprint.</div>
   <canvas id="game"></canvas>
   <div id="crosshair"></div>
 
@@ -553,7 +592,7 @@
   <div id="death-screen">
     <div id="death-box">
       <div id="death-title">YOU DIED</div>
-      <div id="death-tip">点击任意位置复活</div>
+      <div id="death-tip">Click anywhere to respawn</div>
     </div>
   </div>
 
@@ -563,15 +602,20 @@
       <div id="charge-fill"></div>
     </div>
   </div>
+  
+  <!-- 右上角位置显示 -->
+  <div id="pos-indicator">x:0 y:0 z:0</div>
+  <!-- 右上角版本切换按钮 -->
+  <button id="variant-toggle" type="button">Switch to: Fancy Version</button>
 
   <!-- 主菜单 -->
   <div id="main-menu">
     <div class="menu-box">
       <h1>KS Demo</h1>
-      <p>选择开始方式</p>
+      <p>Select Start Method</p>
       <div class="menu-actions">
-        <button id="btn-new-game">新游戏</button>
-        <button id="btn-continue">继续游戏</button>
+        <button id="btn-new-game">New Game</button>
+        <button id="btn-continue">Continue playing</button>
       </div>
     </div>
   </div>
@@ -581,12 +625,12 @@
     <!-- 左侧：分类 + （在武器页时）武器列表 -->
     <div id="inv-left">
       <div id="inv-category-list">
-        <button data-cat="weapon" class="active">武器</button>
-        <button data-cat="rune">符文</button>
-        <button data-cat="consumable">消耗品</button>
-        <button data-cat="ring">戒指</button>
-        <button data-cat="key">关键物品</button>
-        <button data-cat="material">材料</button>
+        <button data-cat="weapon" class="active">Weapons</button>
+        <button data-cat="rune">Runes</button>
+        <button data-cat="consumable">Consumables</button>
+        <button data-cat="ring">Rings</button>
+        <button data-cat="key">Key Items</button>
+        <button data-cat="material">Materials</button>
       </div>
       <div id="inv-weapon-list"></div>
     </div>
@@ -594,25 +638,32 @@
     <!-- 中间：预览 + 描述 + 装备槽 -->
     <div id="inv-center">
       <div id="inv-center-header">
-        <button id="inv-back-btn">返回背包</button>
+        <button id="inv-back-btn">Back to Inventory</button>
       </div>
-      <div id="inv-preview">背包 - 主菜单（暂时占位）</div>
+      <div id="inv-preview">Inventory - Main Menu (placeholder)</div>
       <div id="inv-desc"></div>
-      <button id="inv-equip-main">装备到主手</button>
+      <button id="inv-equip-main">Equip to Main Hand</button>
       <div id="inv-equip-slots">
-        <div class="slot-label" id="inv-slot-label">主手武器：</div>
-        <div id="inv-main-hand">空</div>
+        <div class="slot-label" id="inv-slot-label">Main Hand Weapon:</div>
+        <div id="inv-main-hand">Empty</div>
       </div>
     </div>
 
-    <!-- 右侧：属性区域 -->
+    <!-- Right side: Stats area -->
     <div id="inv-right">
-      <div id="inv-stats-title">武器参数</div>
+      <div id="inv-stats-title">Weapon Stats</div>
       <div id="inv-stats"></div>
-      <div id="inventory-hint">Tab 或 Esc 关闭背包</div>
+      <div id="inventory-hint">Tab or Esc to close inventory</div>
     </div>
   </div>
 
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./libs/CS559-Three/build/three.module.js"
+    }
+  }
+  </script>
   <script type="module" src="./main.js"></script>
 </body>
 </html>

@@ -4,14 +4,15 @@
 //   1) "main"   背包主页，只显示分类 + 当前装备信息
 //   2) "weapon" 武器页面：左侧武器列表 + 中间描述 + 右侧属性
 
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import { Sword_Box } from "../weapons/sword_box.js";
 import {
   getMaterialCount,
   getMaterialName,
   getMaterialPreviewMesh,
   getMaterialDescription,
-} from "./MaterialBase.js";
+} from "./Materials/MaterialBase.js";
+import { getRingEntries, getRingPreviewMesh, equipRingById } from "./Rings/RingManager.js";
 
 // 已解锁的武器列表（初始为空，需拾取解锁）
 const WEAPON_CLASSES = [];
@@ -41,6 +42,7 @@ let previewMesh = null;
 let getEquippedWeaponClass = null;
 let equipWeaponClassFn = null;
 let onEquipCallback = null;
+let onEquipRingCallback = null;
 
 // 对外：解锁新武器（拾取时调用）
 export function unlockWeaponClass(WeaponClass) {
@@ -75,6 +77,7 @@ export function initInventoryUI(options) {
   getEquippedWeaponClass = options.getEquippedWeaponClass;
   equipWeaponClassFn     = options.equipWeaponClass;
   onEquipCallback       = options.onEquip || null;
+  onEquipRingCallback   = options.onEquipRing || onEquipCallback || null;
 
   dom.root       = document.getElementById("inventory-screen");
   dom.weaponList = document.getElementById("inv-weapon-list");
@@ -90,22 +93,25 @@ export function initInventoryUI(options) {
   dom.backBtn    = document.getElementById("inv-back-btn");
 
   if (!dom.root) {
-    console.warn("InventoryUI: 未找到 #inventory-screen");
+    console.warn("InventoryUI: #inventory-screen not found");
     return;
   }
 
   // 装备按钮：在武器页面中，把当前选中武器装到主手
   if (dom.equipBtn) {
     dom.equipBtn.addEventListener("click", () => {
-      if (mode !== "weapon") return;
-      const WeaponClass = WEAPON_CLASSES[selectedIndex];
-      if (WeaponClass && equipWeaponClassFn) {
-        equipWeaponClassFn(WeaponClass);
-        refreshEquippedSlot();
-        refreshWeaponList(); // 更新“装备中”标记
-        if (typeof onEquipCallback === "function") {
-          onEquipCallback(WeaponClass);
+      if (mode === "weapon") {
+        const WeaponClass = WEAPON_CLASSES[selectedIndex];
+        if (WeaponClass && equipWeaponClassFn) {
+          equipWeaponClassFn(WeaponClass);
+          refreshEquippedSlot();
+          refreshWeaponList(); // 更新“装备中”标记
+          if (typeof onEquipCallback === "function") {
+            onEquipCallback(WeaponClass);
+          }
         }
+      } else if (mode === "ring") {
+        equipSelectedRing();
       }
     });
   }
@@ -260,6 +266,11 @@ function renderSecondaryPage(cat) {
     setSelectedIndex(cat, first);
   }
   refreshSecondarySelection(cat);
+
+  if (cat === "ring" && dom.equipBtn) {
+    dom.equipBtn.style.display = "inline-block";
+    dom.equipBtn.textContent = "Equip Ring";
+  }
 }
 
 function renderWeaponPage() {
@@ -283,11 +294,11 @@ function renderWeaponPage() {
 
   if (dom.statsTitle) {
     dom.statsTitle.style.display = "block";
-    dom.statsTitle.textContent = "武器参数";
+    dom.statsTitle.textContent = "Weapon Stats";
   }
 
   if (dom.slotLabel) {
-    dom.slotLabel.textContent = "主手武器：";
+    dom.slotLabel.textContent = "Main Hand:";
     dom.slotLabel.style.display = "block";
   }
 
@@ -307,13 +318,13 @@ function updateCategoryButtons() {
 
 function getCategoryLabel(cat) {
   switch (cat) {
-    case "weapon":     return "武器";
-    case "rune":       return "符文";
-    case "consumable": return "消耗品";
-    case "ring":       return "戒指";
-    case "key":        return "关键物品";
-    case "material":   return "材料";
-    default:           return "背包";
+    case "weapon":     return "Weapons";
+    case "rune":       return "Runes";
+    case "consumable": return "Consumables";
+    case "ring":       return "Rings";
+    case "key":        return "Key Items";
+    case "material":   return "Materials";
+    default:            return "Inventory";
   }
 }
 
@@ -332,16 +343,17 @@ function setSelectedIndex(cat, idx) {
 
 function getPlaceholderEntries(cat) {
   const label = getCategoryLabel(cat);
-  return [{ name: `${label}`, desc: `收集到${label}后会显示在这里。`, count: 0 }];
+  return [{ name: `${label}`, desc: `Collected ${label} will appear here.`, count: 0 }];
 }
 
 function getCategoryEntries(cat) {
   switch (cat) {
     case "material":
       return getMaterialEntries();
+    case "ring":
+      return getRingEntries();
     case "rune":
     case "consumable":
-    case "ring":
     case "key":
       return getPlaceholderEntries(cat);
     default:
@@ -359,7 +371,7 @@ function refreshWeaponList() {
   if (!WEAPON_CLASSES.length) {
     const div = document.createElement("div");
     div.className = "inv-empty";
-    div.textContent = "没有武器";
+    div.textContent = "No weapons";
     dom.weaponList.appendChild(div);
     if (dom.equipBtn) dom.equipBtn.disabled = true;
     return;
@@ -376,13 +388,13 @@ function refreshWeaponList() {
     : null;
 
   WEAPON_CLASSES.forEach((WeaponClass, index) => {
-    const name = WeaponClass.displayName || WeaponClass.name || "武器";
+    const name = WeaponClass.displayName || WeaponClass.name || "Weapon";
     const btn = document.createElement("button");
     btn.className = "inv-weapon-row";
     btn.dataset.index = index;
 
     const isEquipped = equippedClass === WeaponClass;
-    btn.textContent = name + (isEquipped ? "  [装备中]" : "");
+    btn.textContent = name + (isEquipped ? "  [Equipped]" : "");
 
     if (index === selectedIndex) {
       btn.classList.add("selected");
@@ -399,7 +411,7 @@ function refreshWeaponList() {
 
 // 材料列表（目前只有默认材料）
 function getMaterialEntries() {
-  const name = typeof getMaterialName === "function" ? getMaterialName() : "材料";
+  const name = typeof getMaterialName === "function" ? getMaterialName() : "Material";
   const desc = typeof getMaterialDescription === "function" ? getMaterialDescription() : "";
   const count = typeof getMaterialCount === "function" ? getMaterialCount() : 0;
   return [{ name, desc, count }];
@@ -415,7 +427,7 @@ function refreshSecondaryList(cat) {
   if (!hasAny) {
     const div = document.createElement("div");
     div.className = "inv-empty";
-    div.textContent = `没有${getCategoryLabel(cat)}可预览`;
+    div.textContent = `No ${getCategoryLabel(cat)} to preview`;
     dom.weaponList.appendChild(div);
     setSelectedIndex(cat, -1);
     return;
@@ -429,7 +441,8 @@ function refreshSecondaryList(cat) {
     const row = document.createElement("button");
     row.className = "inv-weapon-row";
     row.dataset.index = index;
-    row.textContent = `${entry.name}  x ${entry.count}`;
+    const equippedMark = entry.equipped ? " [Equipped]" : "";
+    row.textContent = `${entry.name}${equippedMark}  x ${entry.count}`;
     if (index === getSelectedIndex(cat)) row.classList.add("selected");
     row.addEventListener("click", () => {
       setSelectedIndex(cat, index);
@@ -447,21 +460,43 @@ function refreshSecondarySelection(cat) {
   const label = getCategoryLabel(cat);
 
   if (!entry || entry.count <= 0) {
-    if (dom.preview) dom.preview.textContent = `尚无${label}`;
+    if (dom.preview) dom.preview.textContent = `No ${label} yet`;
     if (dom.desc) dom.desc.textContent = "";
+    if (cat === "ring" && dom.equipBtn) dom.equipBtn.disabled = true;
     return;
   }
 
   if (dom.desc) {
-    dom.desc.textContent = entry.desc || "";
+    const equippedSuffix = entry.equipped ? " (Equipped)" : "";
+    dom.desc.textContent = (entry.desc || "") + equippedSuffix;
   }
 
   if (dom.preview) {
     if (cat === "material") {
       renderMaterialPreview(entry.name);
+    } else if (cat === "ring") {
+      renderRingPreview(entry);
     } else {
-      dom.preview.textContent = `${label}：${entry.name}`;
+      dom.preview.textContent = `${label}: ${entry.name}`;
     }
+  }
+
+  if (cat === "ring" && dom.equipBtn) {
+    dom.equipBtn.disabled = entry.count <= 0;
+    dom.equipBtn.textContent = entry.equipped ? "Equipped" : "Equip Ring";
+  }
+}
+
+function equipSelectedRing() {
+  const entries = getCategoryEntries("ring");
+  const idx = getSelectedIndex("ring");
+  const entry = entries[idx];
+  if (!entry || entry.count <= 0) return;
+  equipRingById(entry.id);
+  refreshSecondaryList("ring");
+  refreshSecondarySelection("ring");
+  if (typeof onEquipRingCallback === "function") {
+    onEquipRingCallback(entry.id);
   }
 }
 
@@ -476,17 +511,17 @@ function refreshMaterialSelection() {
 
 function refreshSelection() {
   if (!WEAPON_CLASSES.length || mode !== "weapon") {
-    if (dom.preview) dom.preview.textContent = "没有武器可预览";
-    if (dom.desc) dom.desc.textContent = "拾取一把武器后可在此查看";
+    if (dom.preview) dom.preview.textContent = "No weapons to preview";
+    if (dom.desc) dom.desc.textContent = "Pick up a weapon to view it here";
     if (dom.stats) dom.stats.innerHTML = "";
     return;
   }
 
   const WeaponClass = WEAPON_CLASSES[selectedIndex];
-  const name = WeaponClass.displayName || WeaponClass.name || "武器";
+  const name = WeaponClass.displayName || WeaponClass.name || "Weapon";
   const desc =
     WeaponClass.description ||
-    "一把普通的武器，可以在武器类的静态字段中填写更详细的描述。";
+    "A basic weapon. Add more details in the weapon class static fields.";
   const stats = WeaponClass.stats || {};
 
   // 高亮选中的行
@@ -509,9 +544,9 @@ function refreshSelection() {
     const range = stats.range ?? "?";
     const cooldown = stats.cooldown ?? "?";
     dom.stats.innerHTML = `
-      <div>伤害：${damage}</div>
-      <div>攻击距离：${range}</div>
-      <div>冷却时间：${cooldown} 秒</div>
+      <div>Damage: ${damage}</div>
+      <div>Range: ${range}</div>
+      <div>Cooldown: ${cooldown} s</div>
     `;
   }
 }
@@ -525,11 +560,11 @@ function refreshEquippedSlot() {
     : null;
 
   if (!equippedClass) {
-    dom.mainHand.textContent = "空";
+    dom.mainHand.textContent = "None";
     return;
   }
 
-  const name = equippedClass.displayName || equippedClass.name || "武器";
+  const name = equippedClass.displayName || equippedClass.name || "Weapon";
   dom.mainHand.textContent = name;
 }
 
@@ -603,7 +638,7 @@ function buildWeaponPreviewMesh(WeaponClass) {
     }
     return mesh;
   } catch (err) {
-    console.warn("预览模型创建失败", err);
+    console.warn("Failed to create preview model", err);
     return null;
   }
 }
@@ -646,8 +681,14 @@ function renderWeaponPreview(WeaponClass, nameForFallback) {
   previewCamera.position.set(0, 0, dist);
   previewCamera.lookAt(0, 0, 0);
 
-  // 统一向左（页面左侧方向）倾斜 45°
-  mesh.rotation.z = Math.PI / 4;
+  // 预览朝向：普通武器统一向左 45°；镰刀单独旋转让刀刃朝下方
+  const isScythe = WeaponClass && (WeaponClass.name === "Scythe" || WeaponClass.displayName === "Scythe");
+  if (isScythe) {
+    mesh.rotation.x = Math.PI / 4;
+    mesh.rotation.y = -Math.PI / 4;
+  } else {
+    mesh.rotation.z = Math.PI / 4;
+  }
 
   previewScene.add(mesh);
   previewMesh = mesh;
@@ -686,6 +727,46 @@ function renderMaterialPreview(nameForFallback) {
   previewCamera.lookAt(0, 0, 0);
 
   mesh.rotation.z = Math.PI / 6;
+
+  previewScene.add(mesh);
+  previewMesh = mesh;
+  renderPreview();
+}
+
+function renderRingPreview(entry) {
+  if (!dom.preview) return;
+  initPreviewRenderer();
+  if (!previewRenderer || !previewScene || !previewCamera) {
+    dom.preview.textContent = `${entry.name} 的模型预览不可用`;
+    return;
+  }
+
+  clearPreviewMesh();
+
+  const mesh = typeof getRingPreviewMesh === "function" ? getRingPreviewMesh(entry.id) : null;
+  if (!mesh) {
+    dom.preview.textContent = `${entry.name} 的模型预览不可用`;
+    return;
+  }
+
+  // 统一给戒指一个 45° 旋转，方便观赏厚度和内圈
+  mesh.rotation.y = Math.PI / 4;
+  mesh.rotation.x = Math.PI / 12;
+
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+  mesh.position.sub(center);
+
+  const radius = Math.max(size.x, size.y, size.z) * 0.5 || 0.3;
+  const fov = THREE.MathUtils.degToRad(previewCamera.fov);
+  const distHeight = (radius / Math.tan(fov / 2)) * 1.2;
+  const distWidth = (radius / (Math.tan(fov / 2) * previewCamera.aspect)) * 1.2;
+  const dist = Math.max(distHeight, distWidth, 1.0);
+  previewCamera.position.set(0, 0, dist);
+  previewCamera.lookAt(0, 0, 0);
 
   previewScene.add(mesh);
   previewMesh = mesh;

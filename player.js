@@ -1,7 +1,9 @@
 // player.js
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 import { Sword_Box } from "../weapons/sword_box.js";
 import { mapWalls } from "./Map.js";
+import { setGlobalWeaponOnDealDamage } from "./Weapons/WeaponSwordBase.js";
+import { getLifeStealRatio } from "./Rings/RingManager.js";
 
 let player;
 let cameraRef;
@@ -39,7 +41,7 @@ let isDashing = false;
 const PLAYER_RADIUS = 0.5;
 
 // 出生点（可由 checkpoint 覆盖）
-const initialPosition = new THREE.Vector3(0, 0, 0);
+const initialPosition = new THREE.Vector3(0, 0, -4);
 let respawnPosition = initialPosition.clone();
 
 // HP
@@ -122,6 +124,9 @@ export function createPlayer(scene, camera) {
 
   player = new THREE.Object3D();
   player.position.copy(initialPosition);
+
+  // 初始改为面向相反方向（朝 -Z）
+  yaw = Math.PI;
 
   camera.position.set(0, 1.7, 0);
   player.add(camera);
@@ -220,7 +225,7 @@ export function getPlayerPosition() {
 }
 
 export function getPlayerHp() {
-  return playerHp;
+  return Math.round(playerHp);
 }
 
 // 玩家受到伤害：返回 bool 表示这次是否死亡
@@ -229,6 +234,7 @@ export function damagePlayer(amount) {
 
   playerHp -= amount;
   if (playerHp < 0) playerHp = 0;
+  playerHp = Math.round(playerHp);
 
   console.log(`Player HP: ${playerHp}/${PLAYER_MAX_HP}`);
 
@@ -238,6 +244,24 @@ export function damagePlayer(amount) {
   }
   return false;
 }
+
+// 治疗（用于吸血效果），返回实际回复值
+export function healPlayer(amount) {
+  if (playerHp <= 0 || amount <= 0) return 0;
+  const prev = playerHp;
+  playerHp += amount;
+  if (playerHp > PLAYER_MAX_HP) playerHp = PLAYER_MAX_HP;
+  playerHp = Math.round(playerHp);
+  return playerHp - prev;
+}
+
+// 注册全局武器伤害回调，用于戒指吸血
+setGlobalWeaponOnDealDamage((damage) => {
+  const ratio = getLifeStealRatio();
+  if (ratio > 0 && damage > 0) {
+    healPlayer(damage * ratio);
+  }
+});
 
 // 由游戏管理：复活玩家（回出生点、回血、速度清零）
 export function resetPlayerState() {

@@ -1,6 +1,6 @@
 // Points.js
 // 管理玩家点数、死亡掉落与拾取
-import * as THREE from "https://unpkg.com/three@0.165.0/build/three.module.js";
+import * as THREE from "three";
 
 let currentPoints = 0;
 let droppedPoints = 0;
