@@ -7,6 +7,7 @@ import { getLifeStealRatio } from "./Rings/RingManager.js";
 
 let player;
 let cameraRef;
+const CAMERA_BASE_HEIGHT = 1.7;
 
 const move = {
   forward: false,
@@ -128,7 +129,7 @@ export function createPlayer(scene, camera) {
   // 初始改为面向相反方向（朝 -Z）
   yaw = Math.PI;
 
-  camera.position.set(0, 1.7, 0);
+  camera.position.set(0, CAMERA_BASE_HEIGHT, 0);
   player.add(camera);
 
   scene.add(player);
@@ -226,6 +227,12 @@ export function getPlayerPosition() {
 
 export function getPlayerHp() {
   return Math.round(playerHp);
+}
+
+// 相机轻微上下偏移（用于精美版行走摇摄）
+export function setCameraBobOffset(offsetY) {
+  if (!cameraRef) return;
+  cameraRef.position.y = CAMERA_BASE_HEIGHT + (offsetY || 0);
 }
 
 // 玩家受到伤害：返回 bool 表示这次是否死亡

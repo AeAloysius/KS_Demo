@@ -22,6 +22,7 @@ import {
   PLAYER_MAX_STAMINA,
   setCheckpointPosition,
   restorePlayerStatus,
+  setCameraBobOffset,
 } from "./player.js";
 import { Sword_Long } from "./Weapons/sword_long.js";
 import { Scythe } from "./Weapons/scythe.js";
@@ -146,6 +147,11 @@ let retroQuad = null;
 let retroEnabled = false;
 let isMainMenuOpen = true;
 let torchLight = null;
+let lastPlayerPos = new THREE.Vector3();
+let cameraBobPhase = 0;
+let cameraBobOffset = 0;
+const CAMERA_BOB_FREQ = 1;
+const CAMERA_BOB_AMPLITUDE = 0.2;
 
 // 状态
 let isPlayerDead = false;
@@ -200,6 +206,7 @@ function init() {
 
   // 玩家
   createPlayer(scene, camera);
+  lastPlayerPos.copy(getPlayerPosition());
 
   // 光照（更亮、更柔和；支持模式切换时调节强度）
   ambientLight = new THREE.AmbientLight(
@@ -483,6 +490,8 @@ function animate() {
     updatePlayer(dt, scene, enemies);
     updateEnemies(dt, getPlayerPosition(), handleDamageFromEnemy);
   }
+
+  updateCameraBob(dt, gameRunning);
 
   updateTorchLightPosition();
 
@@ -1414,9 +1423,51 @@ function applyLightingForVariant(mode) {
   }
   if (mode === "fancy") {
     ensureTorchLight();
+    // Reset bob phase to avoid jump when switching variants
+    cameraBobPhase = 0;
+    cameraBobOffset = 0;
+    setCameraBobOffset(0);
   } else {
     removeTorchLight();
+    cameraBobPhase = 0;
+    cameraBobOffset = 0;
+    setCameraBobOffset(0);
   }
+}
+
+function updateCameraBob(dt, gameRunning) {
+  if (!scene || !camera || variantMode !== "fancy") {
+    cameraBobPhase = 0;
+    cameraBobOffset = 0;
+    setCameraBobOffset(0);
+    lastPlayerPos.copy(getPlayerPosition());
+    return;
+  }
+
+  const currentPos = getPlayerPosition();
+  const speed = tmpVecAlign.subVectors(currentPos, lastPlayerPos).length() / Math.max(dt, 1e-5);
+  lastPlayerPos.copy(currentPos);
+
+  const moving = gameRunning && speed > 0.1;
+  if (moving) {
+    const speedFactor = Math.min(1.05, Math.max(0.5, speed / 3.5));
+    cameraBobPhase += dt * CAMERA_BOB_FREQ * speedFactor;
+    const ampScale = Math.min(0.8, Math.max(0.25, speed / 5));
+    const targetOffset = Math.sin(cameraBobPhase * Math.PI * 2) * CAMERA_BOB_AMPLITUDE * ampScale;
+    cameraBobOffset = THREE.MathUtils.lerp(
+      cameraBobOffset,
+      targetOffset,
+      Math.min(1, dt * 8)
+    );
+  } else {
+    cameraBobOffset *= Math.max(0, 1 - dt * 6);
+    if (Math.abs(cameraBobOffset) < 1e-3) {
+      cameraBobOffset = 0;
+      cameraBobPhase = 0;
+    }
+  }
+
+  setCameraBobOffset(cameraBobOffset);
 }
 
 function loadVariantMode() {
