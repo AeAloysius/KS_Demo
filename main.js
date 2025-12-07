@@ -39,6 +39,7 @@ import {
   setDefaultMaterial,
 } from "./Materials/MaterialBase.js";
 import { FluorescentFlower } from "./Materials/FluorescentFlower.js";
+import { MazeGlow } from "./Materials/MazeGlow.js";
 import { MysticRing } from "./Rings/Ring_Mystic.js";
 import { addRing, addRingById, resetRings, serializeRings, restoreRings, getEquippedRingId, equipRingById } from "./Rings/RingManager.js";
 
@@ -95,7 +96,7 @@ const FANCY_LIGHTING = {
   bgColor: new THREE.Color(0x1d2f48).getHex(),
 };
 
-// 设置默认材料类型（荧光花）
+// 设置默认材料类型（荧光花），并准备迷宫内的蘑菇
 setDefaultMaterial(new FluorescentFlower());
 
 let scene, camera, renderer, clock;
@@ -147,6 +148,7 @@ let retroQuad = null;
 let retroEnabled = false;
 let isMainMenuOpen = true;
 let torchLight = null;
+let mazeGlowMaterial = null;
 let lastPlayerPos = new THREE.Vector3();
 let cameraBobPhase = 0;
 let cameraBobOffset = 0;
@@ -244,6 +246,8 @@ function init() {
 
   // 材料
   initMaterials(scene);
+  mazeGlowMaterial = new MazeGlow();
+  mazeGlowMaterial.init(scene);
 
     // 地图中的武器拾取
     initWeaponPickups(scene);
@@ -425,16 +429,25 @@ function onKeyDown(event) {
 
     const pickedPts = tryPickupDrop(scene, playerPos);
     if (pickedPts > 0) {
-      showPickupToast(`拾取：点数 +${pickedPts}`);
+      showPickupToast(`Picked up: +${pickedPts} points`);
       saveGameState();
       return;
     }
 
     const pickedMat = tryPickupMaterial(scene, playerPos);
     if (pickedMat) {
-      showPickupToast(`拾取：${pickedMat}`);
+      showPickupToast(`Picked up: ${pickedMat}`);
       saveGameState();
       return;
+    }
+
+    if (mazeGlowMaterial) {
+      const pickedMaze = mazeGlowMaterial.tryPickup(scene, playerPos);
+      if (pickedMaze) {
+        showPickupToast(`Picked up: ${pickedMaze}`);
+        saveGameState();
+        return;
+      }
     }
 
     const pickedWeapon = tryPickupWeapon(scene, playerPos);
@@ -448,6 +461,7 @@ function onKeyDown(event) {
       restorePlayerStatus(cp.mesh.position);
       resetEnemies(scene);
       resetMaterials(scene);
+      resetMazeGlowMaterials();
       saveGameState();
     });
     if (didInteract) return;
@@ -1215,7 +1229,7 @@ function tryPickupRing(scene, playerPos) {
       scene.remove(rp.mesh);
       addRingById(rp.ringId);
       const name = MysticRing.name;
-      showPickupToast(`拾取：${name}`);
+      showPickupToast(`Picked up: ${name}`);
       saveGameState();
       return true;
     }
@@ -1255,7 +1269,7 @@ function tryPickupWeapon(scene, playerPos) {
       scene.remove(wp.mesh);
       unlockWeaponClass(wp.WeaponClass);
       const name = wp.WeaponClass.displayName || wp.WeaponClass.name || "Weapon";
-      showPickupToast(`拾取：${name}`);
+      showPickupToast(`Picked up: ${name}`);
       saveGameState();
       return true;
     }
@@ -1308,6 +1322,18 @@ function findInteractTarget() {
     }
   }
 
+  // 迷宫蘑菇拾取提示
+  if (mazeGlowMaterial) {
+    const mushrooms = mazeGlowMaterial.getMeshes();
+    for (const mesh of mushrooms) {
+      if (!mesh) continue;
+      const pos = mesh.getWorldPosition ? mesh.getWorldPosition(tmpToTarget) : mesh.position;
+      if (isInSight(tmpCamPos, tmpForward, pos, 2.4, maxAngle, tmpToTarget)) {
+        return "Press E to pick up Glowshroom";
+      }
+    }
+  }
+
   // 武器拾取
   const weaponR = 2.2;
   for (const wp of weaponPickups) {
@@ -1325,7 +1351,7 @@ function findInteractTarget() {
     if (rp.collected || !rp.mesh) continue;
     const pos = rp.mesh.position;
     if (isInSight(tmpCamPos, tmpForward, pos, ringR, maxAngle, tmpToTarget)) {
-      return `按 E 拾取 ${MysticRing.name}`;
+      return `Press E to pick up ${MysticRing.name}`;
     }
   }
 
@@ -1392,6 +1418,12 @@ function updateTorchLightPosition() {
   }
   torchLight.position.copy(p).addScaledVector(tmpToTarget, 0.9);
   torchLight.position.y += 1.6;
+}
+
+function resetMazeGlowMaterials() {
+  if (mazeGlowMaterial && scene) {
+    mazeGlowMaterial.reset(scene);
+  }
 }
 
 function applyLightingForVariant(mode) {
@@ -1664,6 +1696,7 @@ function startNewGame() {
     clearFancySky();
   }
   resetMaterials(scene);
+  resetMazeGlowMaterials();
   resetPlayerState();
   resetEnemies(scene);
   resetWeaponPickups(scene);

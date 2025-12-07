@@ -254,7 +254,12 @@ function renderSecondaryPage(cat) {
     dom.weaponList.style.display = "block";
     dom.weaponList.innerHTML = "";
   }
-  if (dom.equipBtn) dom.equipBtn.style.display = "none";
+  if (dom.equipBtn) {
+    dom.equipBtn.style.display = cat === "ring" ? "inline-block" : "none";
+    if (cat !== "ring") {
+      dom.equipBtn.textContent = "Equip";
+    }
+  }
   if (dom.stats) dom.stats.style.display = "none";
   if (dom.statsTitle) dom.statsTitle.style.display = "none";
   if (dom.slotLabel) dom.slotLabel.style.display = "none";
@@ -286,6 +291,8 @@ function renderWeaponPage() {
 
   if (dom.equipBtn) {
     dom.equipBtn.style.display = "inline-block";
+    dom.equipBtn.disabled = false;
+    dom.equipBtn.textContent = "Equip Weapon";
   }
 
   if (dom.stats) {
