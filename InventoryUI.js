@@ -5,7 +5,7 @@
 //   2) "weapon" 武器页面：左侧武器列表 + 中间描述 + 右侧属性
 
 import * as THREE from "three";
-import { Sword_Box } from "../weapons/sword_box.js";
+import { Sword_Box } from "../Weapons/sword_box.js";
 import {
   getMaterialCount,
   getMaterialName,
