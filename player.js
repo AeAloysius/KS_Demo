@@ -1,6 +1,5 @@
 // player.js
 import * as THREE from "./libs/CS559-Three/build/three.module.js";
-import { Sword_Box } from "./Weapons/sword_box.js";
 import { mapWalls } from "./Map.js";
 import { setGlobalWeaponOnDealDamage } from "./Weapons/WeaponSwordBase.js";
 import { getLifeStealRatio } from "./Rings/RingManager.js";
