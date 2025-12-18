@@ -1,6 +1,6 @@
 // enemies/Enemy_Boss.js
 // Boss 敌人：高血量、高伤害，慢速压迫型
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { EnemyBase } from "./EnemyBase.js";
 import { mapWalls } from "../Map.js";
 import { addPoints } from "../Points.js";

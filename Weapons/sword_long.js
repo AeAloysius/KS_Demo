@@ -1,5 +1,5 @@
 // weapons/sword_long.js
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { WeaponSwordBase } from "./WeaponSwordBase.js";
 
 export class Sword_Long extends WeaponSwordBase {

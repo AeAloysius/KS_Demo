@@ -1,6 +1,6 @@
 // enemies/Enemy_Spear.js
 // 进阶敌人：速度更快、攻击更远，造型为矛状圆柱+尖锥
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { GLTFLoader } from "../libs/CS559-Three/examples/jsm/loaders/GLTFLoader.js";
 import { EnemyBase } from "./EnemyBase.js";
 import { mapWalls } from "../Map.js";

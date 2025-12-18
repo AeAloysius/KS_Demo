@@ -1,6 +1,6 @@
 // FluorescentFlower.js
 // 荧光花材料实现，继承 MaterialBase。
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { MaterialBase } from "./MaterialBase.js";
 
 export class FluorescentFlower extends MaterialBase {

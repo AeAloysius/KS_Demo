@@ -1,5 +1,5 @@
 // main.js
-import * as THREE from "three";
+import * as THREE from "./libs/CS559-Three/build/three.module.js";
 import {
   createPlayer,
   updatePlayer,

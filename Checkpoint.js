@@ -1,6 +1,6 @@
 // Checkpoint.js
 // 简单的检查点系统：球体表示，按 E 交互后变色并记录复活点
-import * as THREE from "three";
+import * as THREE from "./libs/CS559-Three/build/three.module.js";
 
 const COLOR_IDLE = 0x5555aa;
 const COLOR_ACTIVE = 0x55aa55;

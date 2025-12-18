@@ -1,5 +1,5 @@
 // enemies/EnemyBase.js
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 
 export class EnemyBase {
   constructor(scene, position = new THREE.Vector3(), config = {}) {

@@ -4,7 +4,7 @@
 //   1) "main"   背包主页，只显示分类 + 当前装备信息
 //   2) "weapon" 武器页面：左侧武器列表 + 中间描述 + 右侧属性
 
-import * as THREE from "three";
+import * as THREE from "./libs/CS559-Three/build/three.module.js";
 import { Sword_Box } from "../Weapons/sword_box.js";
 import {
   getMaterialCount,

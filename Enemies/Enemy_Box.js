@@ -1,5 +1,5 @@
 // enemies/Enemy_Box.js
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { EnemyBase } from "./EnemyBase.js";
 import { mapWalls } from "../Map.js";
 import { addPoints } from "../Points.js";

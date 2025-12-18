@@ -1,5 +1,5 @@
 // Manage_Enemies.js
-import * as THREE from "three";
+import * as THREE from "./libs/CS559-Three/build/three.module.js";
 import { Enemy_Box } from "./Enemies/Enemy_Box.js";
 import { Enemy_Spear } from "./Enemies/Enemy_Spear.js";
 import { Enemy_Boss } from "./Enemies/Enemy_Boss.js";

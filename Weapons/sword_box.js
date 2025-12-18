@@ -1,5 +1,5 @@
 // weapons/sword_box.js
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { WeaponSwordBase } from "./WeaponSwordBase.js";
 
 

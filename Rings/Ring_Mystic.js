@@ -1,6 +1,6 @@
 // Ring_Mystic.js
 // 神秘戒指：每次造成伤害时回复伤害的 10%
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 
 export const MYSTIC_RING_ID = "mystic_ring";
 

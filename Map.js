@@ -1,5 +1,5 @@
 // Map.js
-import * as THREE from "three";
+import * as THREE from "./libs/CS559-Three/build/three.module.js";
 
 export const mapWalls = [];
 export let groundMesh = null;

@@ -1,6 +1,6 @@
 // weapons/scythe.js
 // 镰刀：蓄力慢但伤害高、削韧和击退强
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { WeaponSwordBase } from "./WeaponSwordBase.js";
 
 export class Scythe extends WeaponSwordBase {

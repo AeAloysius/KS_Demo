@@ -1,6 +1,6 @@
 // MazeGlow.js
 // 迷宫专用材料，实现方式与荧光花类似，但只刷新在迷宫内。
-import * as THREE from "three";
+import * as THREE from "../libs/CS559-Three/build/three.module.js";
 import { MaterialBase } from "./MaterialBase.js";
 
 export class MazeGlow extends MaterialBase {
