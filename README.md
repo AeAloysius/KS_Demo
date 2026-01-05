@@ -3,6 +3,7 @@
 > A first-person action RPG inspired by early *King’s Field* and classic Souls-like design.  
 > Built from scratch in JavaScript using Three.js, focusing on systemic combat, stamina-based decision making, and spatial tension.
 
+Live Demo: https://aealoysius.github.io/KS_Demo/
 ---
 
 ## Gameplay Preview
