@@ -7,9 +7,9 @@
 
 ## Gameplay Preview
 
-![Village Area](./screenshots/ks_1.png)
-![Combat & Stamina](./screenshots/ks_2.png)
-![Inventory UI](./screenshots/ks_3.png)
+![Village Area](./KS_1.png)
+![Combat & Stamina](./KS_Demo_Projectcard.png)
+![Simple mode](./KS_3.png)
 
 ---
 
@@ -92,7 +92,7 @@ This design encourages cautious exploration and meaningful risk evaluation.
 
 ## Inventory & Progression
 
-![Inventory UI](./screenshots/ks_inventory.png)
+![Inventory UI](./KS_2.png)
 
 - Tab-based inventory system
 - Weapons must be discovered before they can be equipped
